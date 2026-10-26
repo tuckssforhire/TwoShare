@@ -4,8 +4,9 @@ import android.content.Context
 import android.net.Uri
 import android.webkit.MimeTypeMap
 import com.twoshare.app.model.*
+import io.github.jan.supabase.auth.OtpType
 import io.github.jan.supabase.auth.auth
-import io.github.jan.supabase.auth.providers.builtin.Email
+import io.github.jan.supabase.auth.providers.builtin.OTP
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.query.Order
 import io.github.jan.supabase.storage.storage
@@ -16,15 +17,35 @@ class TwoShareRepository {
     private val supabase = SupabaseProvider.client
     private val signedUrlCache = mutableMapOf<String, String>()
 
+    private val allowedEmails = setOf(
+        "eddierodwards@gmail.com",
+        "misamitchlailarene@gmail.com"
+    )
+
     fun currentUserId(): String? = supabase.auth.currentUserOrNull()?.id
 
     fun isSignedIn(): Boolean = currentUserId() != null
 
-    suspend fun signIn(email: String, password: String) {
-        supabase.auth.signInWith(Email) {
-            this.email = email.trim()
-            this.password = password
+    suspend fun sendSignInEmail(email: String) {
+        val normalized = email.trim().lowercase()
+        require(normalized in allowedEmails) { "This email is not authorized for TwoShare." }
+
+        supabase.auth.signInWith(OTP) {
+            this.email = normalized
+            createUser = false
         }
+    }
+
+    suspend fun verifyEmailCode(email: String, code: String) {
+        val normalized = email.trim().lowercase()
+        require(normalized in allowedEmails) { "This email is not authorized for TwoShare." }
+        require(code.trim().isNotEmpty()) { "Enter the code from your email." }
+
+        supabase.auth.verifyEmailOtp(
+            type = OtpType.Email.EMAIL,
+            email = normalized,
+            token = code.trim()
+        )
         requireAllowedUser()
     }
 
@@ -64,7 +85,7 @@ class TwoShareRepository {
             .decodeList<LikeRow>()
             .groupBy { it.postId }
 
-        val bucket = supabase.storage.from("photos")
+        val bucket = supabase.storage.from("twoshare")
 
         return posts.map { post ->
             val signedUrl = signedUrlCache.getOrPut(post.imagePath) {
@@ -73,7 +94,7 @@ class TwoShareRepository {
             FeedPost(
                 id = post.id,
                 userId = post.userId,
-                userName = profiles[post.userId]?.name ?: "User",
+                userName = profiles[post.userId]?.displayName ?: "User",
                 imagePath = post.imagePath,
                 imageUrl = signedUrl,
                 createdAt = post.createdAt,
@@ -97,7 +118,7 @@ class TwoShareRepository {
             ?: "jpg"
 
         val path = "$uid/${UUID.randomUUID()}.$extension"
-        val bucket = supabase.storage.from("photos")
+        val bucket = supabase.storage.from("twoshare")
         bucket.upload(path, bytes) {
             upsert = false
         }
@@ -144,7 +165,7 @@ class TwoShareRepository {
             UiComment(
                 id = row.id,
                 userId = row.userId,
-                userName = profiles[row.userId]?.name ?: "User",
+                userName = profiles[row.userId]?.displayName ?: "User",
                 text = row.text,
                 createdAt = row.createdAt
             )
@@ -157,7 +178,7 @@ class TwoShareRepository {
 
         val cleaned = text.trim()
         require(cleaned.isNotEmpty()) { "Comment cannot be empty." }
-        require(cleaned.length <= 500) { "Comment must be 500 characters or less." }
+        require(cleaned.length <= 1000) { "Comment must be 1000 characters or less." }
 
         supabase.from("comments").insert(
             CommentInsert(postId = postId, userId = uid, text = cleaned)
