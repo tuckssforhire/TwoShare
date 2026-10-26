@@ -11,7 +11,10 @@ object SupabaseProvider {
             supabaseUrl = SupabaseConfig.URL,
             supabaseKey = SupabaseConfig.PUBLISHABLE_KEY
         ) {
-            install(Auth)
+            install(Auth) {
+                scheme = "twoshare"
+                host = "login"
+            }
             install(Postgrest)
             install(Storage)
         }
