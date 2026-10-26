@@ -6,7 +6,8 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class ProfileRow(
     val id: String,
-    val name: String
+    val email: String,
+    @SerialName("display_name") val displayName: String
 )
 
 @Serializable
@@ -28,7 +29,7 @@ data class CommentRow(
     val id: String,
     @SerialName("post_id") val postId: String,
     @SerialName("user_id") val userId: String,
-    val text: String,
+    @SerialName("body") val text: String,
     @SerialName("created_at") val createdAt: String
 )
 
@@ -48,7 +49,7 @@ data class LikeInsert(
 data class CommentInsert(
     @SerialName("post_id") val postId: String,
     @SerialName("user_id") val userId: String,
-    val text: String
+    @SerialName("body") val text: String
 )
 
 data class FeedPost(
