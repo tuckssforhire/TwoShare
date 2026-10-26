@@ -7,12 +7,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AddPhotoAlternate
-import androidx.compose.material.icons.filled.ChatBubbleOutline
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -78,8 +72,8 @@ fun FeedScreen(
             TopAppBar(
                 title = { Text("TwoShare") },
                 actions = {
-                    IconButton(onClick = { scope.launch { refresh() } }) {
-                        Icon(Icons.Default.Refresh, contentDescription = "Refresh")
+                    TextButton(onClick = { scope.launch { refresh() } }) {
+                        Text("Refresh")
                     }
                     TextButton(onClick = {
                         scope.launch {
@@ -100,7 +94,7 @@ fun FeedScreen(
                 if (uploading) {
                     CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
                 } else {
-                    Icon(Icons.Default.AddPhotoAlternate, contentDescription = "Upload photo")
+                    Text("+ Photo")
                 }
             }
         }
@@ -121,7 +115,7 @@ fun FeedScreen(
                     CircularProgressIndicator()
                 }
                 posts.isEmpty() -> Box(Modifier.fillMaxSize().padding(32.dp)) {
-                    Text("No photos yet. Tap the photo button to share the first one.")
+                    Text("No photos yet. Tap + Photo to share the first one.")
                 }
                 else -> LazyColumn(
                     modifier = Modifier.fillMaxSize(),
@@ -196,17 +190,12 @@ private fun PostCard(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)
             ) {
                 TextButton(onClick = onLike) {
-                    Icon(
-                        imageVector = if (liked) Icons.Default.Favorite else Icons.Outlined.FavoriteBorder,
-                        contentDescription = if (liked) "Unlike" else "Like"
-                    )
+                    Text(if (liked) "♥" else "♡")
                     Spacer(Modifier.width(6.dp))
                     Text(if (post.likedBy.isEmpty()) "Like" else "${post.likedBy.size}")
                 }
 
                 TextButton(onClick = onComments) {
-                    Icon(Icons.Default.ChatBubbleOutline, contentDescription = "Comments")
-                    Spacer(Modifier.width(6.dp))
                     Text("Comments")
                 }
             }
