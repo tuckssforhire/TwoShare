@@ -7,7 +7,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.twoshare.app.data.TwoShareRepository
 import kotlinx.coroutines.launch
@@ -19,13 +18,17 @@ fun LoginScreen(
 ) {
     val scope = rememberCoroutineScope()
     var email by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
+    var code by remember { mutableStateOf("") }
+    var emailSent by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var info by remember { mutableStateOf<String?>(null) }
 
     Surface(modifier = Modifier.fillMaxSize()) {
         Box(
-            modifier = Modifier.fillMaxSize().padding(28.dp),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(28.dp),
             contentAlignment = Alignment.Center
         ) {
             Column(
@@ -39,21 +42,36 @@ fun LoginScreen(
 
                 OutlinedTextField(
                     value = email,
-                    onValueChange = { email = it },
+                    onValueChange = {
+                        email = it
+                        error = null
+                    },
                     modifier = Modifier.fillMaxWidth(),
                     label = { Text("Email") },
                     singleLine = true,
+                    enabled = !emailSent && !loading,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email)
                 )
-                Spacer(Modifier.height(12.dp))
-                OutlinedTextField(
-                    value = password,
-                    onValueChange = { password = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Password") },
-                    singleLine = true,
-                    visualTransformation = PasswordVisualTransformation()
-                )
+
+                if (emailSent) {
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = code,
+                        onValueChange = {
+                            code = it.filter(Char::isDigit).take(8)
+                            error = null
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Email code (if shown)") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword)
+                    )
+                }
+
+                info?.let {
+                    Spacer(Modifier.height(12.dp))
+                    Text(it, style = MaterialTheme.typography.bodySmall)
+                }
 
                 error?.let {
                     Spacer(Modifier.height(12.dp))
@@ -61,30 +79,75 @@ fun LoginScreen(
                 }
 
                 Spacer(Modifier.height(20.dp))
-                Button(
-                    onClick = {
-                        scope.launch {
-                            loading = true
-                            error = null
-                            runCatching { repository.signIn(email, password) }
-                                .onSuccess { onSignedIn() }
-                                .onFailure {
-                                    runCatching { repository.signOut() }
-                                    error = it.localizedMessage ?: "Login failed"
-                                }
-                            loading = false
+
+                if (!emailSent) {
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                loading = true
+                                error = null
+                                info = null
+                                runCatching { repository.sendSignInEmail(email) }
+                                    .onSuccess {
+                                        emailSent = true
+                                        info = "Check your email. If Supabase shows a sign-in link, tap it. If it shows a code, enter the code here."
+                                    }
+                                    .onFailure {
+                                        error = it.localizedMessage ?: "Unable to send sign-in email"
+                                    }
+                                loading = false
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !loading && email.isNotBlank()
+                    ) {
+                        if (loading) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Text("Send sign-in email")
                         }
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = !loading && email.isNotBlank() && password.isNotBlank()
-                ) {
-                    if (loading) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(20.dp),
-                            strokeWidth = 2.dp
-                        )
-                    } else {
-                        Text("Sign in")
+                    }
+                } else {
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                loading = true
+                                error = null
+                                runCatching { repository.verifyEmailCode(email, code) }
+                                    .onSuccess { onSignedIn() }
+                                    .onFailure {
+                                        error = it.localizedMessage ?: "Verification failed"
+                                    }
+                                loading = false
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !loading && code.isNotBlank()
+                    ) {
+                        if (loading) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Text("Verify code")
+                        }
+                    }
+
+                    Spacer(Modifier.height(8.dp))
+                    TextButton(
+                        onClick = {
+                            emailSent = false
+                            code = ""
+                            info = null
+                            error = null
+                        },
+                        enabled = !loading
+                    ) {
+                        Text("Use another email")
                     }
                 }
             }
