@@ -8,6 +8,7 @@ import com.twoshare.app.data.SupabaseProvider
 import com.twoshare.app.data.TwoShareRepository
 import com.twoshare.app.ui.FeedScreen
 import com.twoshare.app.ui.LoginScreen
+import com.twoshare.app.ui.MessengerScreen
 import com.twoshare.app.ui.theme.TwoShareTheme
 import io.github.jan.supabase.auth.handleDeeplinks
 
@@ -21,16 +22,31 @@ class MainActivity : ComponentActivity() {
             TwoShareTheme {
                 val repository = remember { TwoShareRepository() }
                 var signedIn by remember { mutableStateOf(repository.isSignedIn()) }
+                var showMessenger by remember { mutableStateOf(false) }
 
                 if (signedIn) {
-                    FeedScreen(
-                        repository = repository,
-                        onSignedOut = { signedIn = false }
-                    )
+                    if (showMessenger) {
+                        MessengerScreen(
+                            repository = repository,
+                            onBack = { showMessenger = false }
+                        )
+                    } else {
+                        FeedScreen(
+                            repository = repository,
+                            onOpenMessenger = { showMessenger = true },
+                            onSignedOut = {
+                                showMessenger = false
+                                signedIn = false
+                            }
+                        )
+                    }
                 } else {
                     LoginScreen(
                         repository = repository,
-                        onSignedIn = { signedIn = true }
+                        onSignedIn = {
+                            showMessenger = false
+                            signedIn = true
+                        }
                     )
                 }
             }
