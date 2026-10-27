@@ -26,6 +26,7 @@ import java.time.OffsetDateTime
 @Composable
 fun FeedScreen(
     repository: TwoShareRepository,
+    onOpenMessenger: () -> Unit,
     onSignedOut: () -> Unit
 ) {
     val context = LocalContext.current
@@ -72,6 +73,9 @@ fun FeedScreen(
             TopAppBar(
                 title = { Text("TwoShare") },
                 actions = {
+                    TextButton(onClick = onOpenMessenger) {
+                        Text("Chat")
+                    }
                     TextButton(onClick = { scope.launch { refresh() } }) {
                         Text("Refresh")
                     }
