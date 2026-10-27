@@ -22,6 +22,8 @@ class TwoShareRepository {
         "misamitchlailarene@gmail.com"
     )
 
+    private val allowedReactions = setOf("👍", "❤️", "😂", "😮", "😢", "🔥")
+
     fun currentUserId(): String? = supabase.auth.currentUserOrNull()?.id
 
     fun isSignedIn(): Boolean = currentUserId() != null
@@ -75,11 +77,7 @@ class TwoShareRepository {
 
         if (posts.isEmpty()) return emptyList()
 
-        val profiles = supabase.from("profiles")
-            .select()
-            .decodeList<ProfileRow>()
-            .associateBy { it.id }
-
+        val profiles = loadProfiles()
         val likes = supabase.from("likes")
             .select()
             .decodeList<LikeRow>()
@@ -112,10 +110,7 @@ class TwoShareRepository {
         require(bytes.size <= 15 * 1024 * 1024) { "Image must be 15 MB or smaller." }
 
         val mime = context.contentResolver.getType(imageUri)
-        val extension = MimeTypeMap.getSingleton().getExtensionFromMimeType(mime)
-            ?.lowercase()
-            ?.takeIf { it.matches(Regex("[a-z0-9]{2,5}")) }
-            ?: "jpg"
+        val extension = fileExtension(mime, "jpg")
 
         val path = "$uid/${UUID.randomUUID()}.$extension"
         val bucket = supabase.storage.from("twoshare")
@@ -156,10 +151,7 @@ class TwoShareRepository {
             }
             .decodeList<CommentRow>()
 
-        val profiles = supabase.from("profiles")
-            .select()
-            .decodeList<ProfileRow>()
-            .associateBy { it.id }
+        val profiles = loadProfiles()
 
         return rows.map { row ->
             UiComment(
@@ -184,4 +176,132 @@ class TwoShareRepository {
             CommentInsert(postId = postId, userId = uid, text = cleaned)
         )
     }
+
+    suspend fun loadMessages(): List<UiChatMessage> {
+        requireAllowedUser()
+
+        val rows = supabase.from("messages")
+            .select {
+                order("created_at", Order.ASCENDING)
+            }
+            .decodeList<MessageRow>()
+
+        val profiles = loadProfiles()
+        val reactions = supabase.from("message_reactions")
+            .select()
+            .decodeList<MessageReactionRow>()
+            .groupBy { it.messageId }
+
+        val bucket = supabase.storage.from("twoshare")
+
+        return rows.map { row ->
+            val mediaUrl = row.mediaPath?.let { path ->
+                signedUrlCache.getOrPut(path) {
+                    bucket.createSignedUrl(path, 24.hours)
+                }
+            }
+
+            val groupedReactions = reactions[row.id]
+                .orEmpty()
+                .groupBy { it.emoji }
+                .mapValues { (_, values) -> values.map { it.userId }.toSet() }
+
+            UiChatMessage(
+                id = row.id,
+                senderId = row.senderId,
+                senderName = profiles[row.senderId]?.displayName ?: "User",
+                body = row.body,
+                mediaType = row.mediaType,
+                mediaUrl = mediaUrl,
+                createdAt = row.createdAt,
+                reactions = groupedReactions
+            )
+        }
+    }
+
+    suspend fun sendMessage(context: Context, text: String, attachmentUri: Uri?) {
+        val uid = currentUserId() ?: error("Not signed in")
+        requireAllowedUser()
+
+        val cleaned = text.trim().takeIf { it.isNotEmpty() }
+        require(cleaned == null || cleaned.length <= 2000) { "Message must be 2000 characters or less." }
+        require(cleaned != null || attachmentUri != null) { "Type a message or attach a photo/video." }
+
+        var mediaPath: String? = null
+        var mediaType: String? = null
+        var mediaMime: String? = null
+
+        if (attachmentUri != null) {
+            val mime = context.contentResolver.getType(attachmentUri)?.lowercase()
+                ?: error("Unable to determine the attachment type.")
+            val type = when {
+                mime.startsWith("image/") -> "image"
+                mime.startsWith("video/") -> "video"
+                else -> error("Only photos and videos can be sent.")
+            }
+
+            val bytes = context.contentResolver.openInputStream(attachmentUri)?.use { it.readBytes() }
+                ?: error("Unable to read the selected attachment.")
+            require(bytes.size <= 25 * 1024 * 1024) {
+                "Attachments must be 25 MB or smaller to conserve your Supabase Free storage."
+            }
+
+            val extension = fileExtension(mime, if (type == "video") "mp4" else "jpg")
+            val path = "$uid/chat/${UUID.randomUUID()}.$extension"
+            supabase.storage.from("twoshare").upload(path, bytes) {
+                upsert = false
+            }
+
+            mediaPath = path
+            mediaType = type
+            mediaMime = mime
+        }
+
+        supabase.from("messages").insert(
+            MessageInsert(
+                senderId = uid,
+                body = cleaned,
+                mediaPath = mediaPath,
+                mediaType = mediaType,
+                mediaMime = mediaMime
+            )
+        )
+    }
+
+    suspend fun toggleMessageReaction(message: UiChatMessage, emoji: String) {
+        val uid = currentUserId() ?: error("Not signed in")
+        requireAllowedUser()
+        require(emoji in allowedReactions) { "Unsupported reaction." }
+
+        val alreadyReacted = message.reactions[emoji]?.contains(uid) == true
+        if (alreadyReacted) {
+            supabase.from("message_reactions").delete {
+                filter {
+                    eq("message_id", message.id)
+                    eq("user_id", uid)
+                    eq("emoji", emoji)
+                }
+            }
+        } else {
+            supabase.from("message_reactions").insert(
+                MessageReactionInsert(
+                    messageId = message.id,
+                    userId = uid,
+                    emoji = emoji
+                )
+            )
+        }
+    }
+
+    private suspend fun loadProfiles(): Map<String, ProfileRow> =
+        supabase.from("profiles")
+            .select()
+            .decodeList<ProfileRow>()
+            .associateBy { it.id }
+
+    private fun fileExtension(mime: String?, fallback: String): String =
+        MimeTypeMap.getSingleton().getExtensionFromMimeType(mime)
+            ?.lowercase()
+            ?.takeIf { it.matches(Regex("[a-z0-9]{2,5}")) }
+            ?: fallback
 }
