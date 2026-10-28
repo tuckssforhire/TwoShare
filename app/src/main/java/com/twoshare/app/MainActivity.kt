@@ -33,18 +33,20 @@ class MainActivity : ComponentActivity() {
                 val authManager = remember { AuthManager() }
                 val scope = rememberCoroutineScope()
 
-                authManager.trustExistingSessionAfterUpgrade(this@MainActivity)
-
-                var signedIn by remember {
-                    mutableStateOf(authManager.isAppAuthorized(this@MainActivity))
-                }
+                var authChecked by remember { mutableStateOf(false) }
+                var signedIn by remember { mutableStateOf(false) }
                 var showMessenger by remember { mutableStateOf(false) }
                 var activeCall by remember { mutableStateOf<CallRow?>(null) }
                 var activeCallIncoming by remember { mutableStateOf(false) }
                 var incomingCall by remember { mutableStateOf<CallRow?>(null) }
 
+                LaunchedEffect(Unit) {
+                    signedIn = authManager.restoreTrustedSession(this@MainActivity)
+                    authChecked = true
+                }
+
                 LaunchedEffect(signedIn, activeCall) {
-                    if (!signedIn || activeCall != null) return@LaunchedEffect
+                    if (!authChecked || !signedIn || activeCall != null) return@LaunchedEffect
                     while (isActive && signedIn && activeCall == null) {
                         val currentIncoming = incomingCall
                         if (currentIncoming == null) {
@@ -57,7 +59,9 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                if (signedIn) {
+                if (!authChecked) {
+                    Text("Loading TwoShare…")
+                } else if (signedIn) {
                     val call = activeCall
                     if (call != null) {
                         CallScreen(
@@ -104,7 +108,7 @@ class MainActivity : ComponentActivity() {
                 }
 
                 val ringing = incomingCall
-                if (signedIn && activeCall == null && ringing != null) {
+                if (authChecked && signedIn && activeCall == null && ringing != null) {
                     AlertDialog(
                         onDismissRequest = { },
                         title = {
