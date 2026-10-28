@@ -10,6 +10,7 @@ import io.github.jan.supabase.auth.providers.builtin.OTP
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.query.Order
 import io.github.jan.supabase.storage.storage
+import java.time.Instant
 import java.util.UUID
 import kotlin.time.Duration.Companion.hours
 
@@ -290,6 +291,95 @@ class TwoShareRepository {
                     emoji = emoji
                 )
             )
+        }
+    }
+
+    suspend fun createOutgoingCall(isVideo: Boolean): CallRow {
+        val uid = currentUserId() ?: error("Not signed in")
+        requireAllowedUser()
+        val other = loadProfiles().values.firstOrNull { it.id != uid }
+            ?: error("The second TwoShare account is not available.")
+
+        return supabase.from("calls").insert(
+            CallInsert(
+                callerId = uid,
+                calleeId = other.id,
+                isVideo = isVideo
+            )
+        ).decodeSingle<CallRow>()
+    }
+
+    suspend fun findIncomingCall(): CallRow? {
+        val uid = currentUserId() ?: return null
+        return supabase.from("calls")
+            .select {
+                filter {
+                    eq("callee_id", uid)
+                    eq("status", "ringing")
+                }
+                order("created_at", Order.DESCENDING)
+            }
+            .decodeList<CallRow>()
+            .firstOrNull()
+    }
+
+    suspend fun getCall(callId: String): CallRow? {
+        requireAllowedUser()
+        return supabase.from("calls")
+            .select {
+                filter { eq("id", callId) }
+            }
+            .decodeList<CallRow>()
+            .firstOrNull()
+    }
+
+    suspend fun partnerName(call: CallRow): String {
+        val uid = currentUserId() ?: return "TwoShare"
+        val partnerId = if (call.callerId == uid) call.calleeId else call.callerId
+        return loadProfiles()[partnerId]?.displayName ?: "TwoShare"
+    }
+
+    suspend fun setCallOffer(callId: String, sdp: String) {
+        requireAllowedUser()
+        supabase.from("calls").update({
+            set("offer_sdp", sdp)
+        }) {
+            filter { eq("id", callId) }
+        }
+    }
+
+    suspend fun acceptCall(callId: String, answerSdp: String) {
+        requireAllowedUser()
+        supabase.from("calls").update({
+            set("answer_sdp", answerSdp)
+            set("status", "accepted")
+            set("answered_at", Instant.now().toString())
+        }) {
+            filter { eq("id", callId) }
+        }
+    }
+
+    suspend fun rejectCall(callId: String) {
+        setCallStatus(callId, "rejected")
+    }
+
+    suspend fun cancelCall(callId: String) {
+        setCallStatus(callId, "cancelled")
+    }
+
+    suspend fun endCall(callId: String) {
+        setCallStatus(callId, "ended")
+    }
+
+    private suspend fun setCallStatus(callId: String, status: String) {
+        requireAllowedUser()
+        supabase.from("calls").update({
+            set("status", status)
+            if (status in setOf("rejected", "cancelled", "ended")) {
+                set("ended_at", Instant.now().toString())
+            }
+        }) {
+            filter { eq("id", callId) }
         }
     }
 
