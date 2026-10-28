@@ -10,8 +10,8 @@
 
     <application
         android:allowBackup="false"
-        android:icon="@mipmap/ic_launcher"
-        android:roundIcon="@mipmap/ic_launcher_round"
+        android:icon="@drawable/twoshare_icon"
+        android:roundIcon="@drawable/twoshare_icon"
         android:label="TwoShare"
         android:supportsRtl="true"
         android:theme="@style/Theme.TwoShare">
