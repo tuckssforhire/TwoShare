@@ -1,5 +1,3 @@
-import java.util.Base64
-
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -15,8 +13,8 @@ android {
         applicationId = "com.twoshare.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 10
-        versionName = "0.3.7"
+        versionCode = 11
+        versionName = "0.3.8"
     }
 
     compileOptions {
@@ -56,25 +54,4 @@ dependencies {
 
     implementation("io.coil-kt:coil-compose:2.7.0")
     implementation("io.github.webrtc-sdk:android:150.7871.01")
-}
-
-val generateLauncherIcon by tasks.registering {
-    val encodedIcon = layout.projectDirectory.file("icon/ic_launcher_192.b64")
-    val outputDir = layout.projectDirectory.dir("src/main/res/mipmap-xxxhdpi")
-    val launcher = outputDir.file("ic_launcher.png")
-    val round = outputDir.file("ic_launcher_round.png")
-
-    inputs.file(encodedIcon)
-    outputs.files(launcher, round)
-
-    doLast {
-        val bytes = Base64.getMimeDecoder().decode(encodedIcon.asFile.readText().trim())
-        outputDir.asFile.mkdirs()
-        launcher.asFile.writeBytes(bytes)
-        round.asFile.writeBytes(bytes)
-    }
-}
-
-tasks.matching { it.name == "preBuild" }.configureEach {
-    dependsOn(generateLauncherIcon)
 }
