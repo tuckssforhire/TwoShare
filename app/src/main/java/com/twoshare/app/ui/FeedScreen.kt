@@ -114,7 +114,7 @@ fun FeedScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Image(
-                            painter = painterResource(R.mipmap.ic_launcher),
+                            painter = painterResource(R.drawable.twoshare_icon),
                             contentDescription = "TwoShare logo",
                             modifier = Modifier.size(34.dp)
                         )
