@@ -2,6 +2,7 @@ package com.twoshare.app.ui
 
 import android.Manifest
 import android.content.pm.PackageManager
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -61,12 +62,32 @@ fun CallScreen(
     var answerStarted by remember { mutableStateOf(false) }
     var answerApplied by remember { mutableStateOf(false) }
     var finished by remember { mutableStateOf(false) }
+    var endingCall by remember { mutableStateOf(false) }
 
     fun finishScreen() {
         if (!finished) {
             finished = true
             onFinished()
         }
+    }
+
+    fun endAndFinish() {
+        if (endingCall || finished) return
+        endingCall = true
+        scope.launch {
+            runCatching {
+                if (!incoming && latestCall.status == "ringing") {
+                    repository.cancelCall(initialCall.id)
+                } else {
+                    repository.endCall(initialCall.id)
+                }
+            }
+            finishScreen()
+        }
+    }
+
+    BackHandler(enabled = !finished) {
+        endAndFinish()
     }
 
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -201,7 +222,7 @@ fun CallScreen(
                 factory = { localRenderer },
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .padding(top = 24.dp, end = 16.dp)
+                    .padding(top = 88.dp, end = 16.dp)
                     .width(120.dp)
                     .height(170.dp)
             )
@@ -225,6 +246,16 @@ fun CallScreen(
                 Spacer(Modifier.height(20.dp))
                 Text(partnerName, color = Color.White, style = MaterialTheme.typography.headlineSmall)
             }
+        }
+
+        FilledTonalButton(
+            onClick = { endAndFinish() },
+            enabled = !endingCall,
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(start = 12.dp, top = 24.dp)
+        ) {
+            Text("‹ Back")
         }
 
         Column(
@@ -254,69 +285,84 @@ fun CallScreen(
             }
         }
 
-        Row(
+        Surface(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .padding(horizontal = 18.dp, vertical = 34.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.CenterVertically
+                .fillMaxWidth(),
+            color = Color(0xCC11111B)
         ) {
-            FilledTonalButton(
-                onClick = {
-                    muted = !muted
-                    manager?.setMuted(muted)
-                },
-                enabled = hasPermissions
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 18.dp, vertical = 18.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Text(if (muted) "Unmute" else "Mute")
-            }
-
-            FilledTonalButton(
-                onClick = {
-                    speakerOn = !speakerOn
-                    manager?.setSpeakerEnabled(speakerOn)
-                },
-                enabled = hasPermissions
-            ) {
-                Text(if (speakerOn) "Speaker ✓" else "Speaker")
-            }
-
-            if (initialCall.isVideo) {
-                FilledTonalButton(
-                    onClick = {
-                        cameraOn = !cameraOn
-                        manager?.setVideoEnabled(cameraOn)
-                    },
-                    enabled = hasPermissions
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Text(if (cameraOn) "Camera ✓" else "Camera")
-                }
-
-                FilledTonalButton(
-                    onClick = { manager?.switchCamera() },
-                    enabled = hasPermissions && cameraOn
-                ) {
-                    Text("Flip")
-                }
-            }
-
-            Button(
-                onClick = {
-                    scope.launch {
-                        runCatching {
-                            if (!incoming && latestCall.status == "ringing") {
-                                repository.cancelCall(initialCall.id)
-                            } else {
-                                repository.endCall(initialCall.id)
-                            }
-                        }
-                        finishScreen()
+                    FilledTonalButton(
+                        onClick = {
+                            muted = !muted
+                            manager?.setMuted(muted)
+                        },
+                        enabled = hasPermissions,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(if (muted) "Unmute" else "Mute")
                     }
-                },
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-            ) {
-                Text("End")
+
+                    FilledTonalButton(
+                        onClick = {
+                            speakerOn = !speakerOn
+                            manager?.setSpeakerEnabled(speakerOn)
+                        },
+                        enabled = hasPermissions,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(if (speakerOn) "Speaker ✓" else "Speaker")
+                    }
+                }
+
+                if (initialCall.isVideo) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        FilledTonalButton(
+                            onClick = {
+                                cameraOn = !cameraOn
+                                manager?.setVideoEnabled(cameraOn)
+                            },
+                            enabled = hasPermissions,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(if (cameraOn) "Camera ✓" else "Camera")
+                        }
+
+                        FilledTonalButton(
+                            onClick = { manager?.switchCamera() },
+                            enabled = hasPermissions && cameraOn,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Flip camera")
+                        }
+                    }
+                }
+
+                Button(
+                    onClick = { endAndFinish() },
+                    enabled = !endingCall,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(54.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Text(if (endingCall) "Ending…" else "End Call")
+                }
             }
         }
     }
