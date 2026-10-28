@@ -137,7 +137,7 @@ fun LoginScreen(
                                         }
                                     }
                                 }.onFailure {
-                                    error = it.localizedMessage ?: "Unable to sign in"
+                                    error = friendlyAuthError(it)
                                 }
                                 loading = false
                             }
@@ -155,7 +155,32 @@ fun LoginScreen(
                         }
                     }
 
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(6.dp))
+                    OutlinedButton(
+                        onClick = {
+                            scope.launch {
+                                loading = true
+                                error = null
+                                info = null
+                                runCatching {
+                                    authManager.startEmailCodeSignIn(email)
+                                }.onSuccess {
+                                    verificationMode = VerificationMode.NEW_DEVICE
+                                    code = ""
+                                    info = "We sent a sign-in code to your email. Enter it below to sign in and trust this phone."
+                                }.onFailure {
+                                    error = friendlyAuthError(it)
+                                }
+                                loading = false
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !loading && email.isNotBlank()
+                    ) {
+                        Text("Sign in with email code")
+                    }
+
+                    Spacer(Modifier.height(6.dp))
                     TextButton(
                         onClick = {
                             scope.launch {
@@ -164,21 +189,22 @@ fun LoginScreen(
                                 info = null
                                 runCatching {
                                     require(password.length >= 6) {
-                                        "Enter the password you want to use first."
+                                        "Type the new password you want to use first."
                                     }
                                     authManager.startPasswordSetup(email)
                                 }.onSuccess {
                                     verificationMode = VerificationMode.SET_PASSWORD
-                                    info = "Enter the email code once to save this password and trust this phone."
+                                    code = ""
+                                    info = "Enter the email code to save this new password and trust this phone."
                                 }.onFailure {
-                                    error = it.localizedMessage ?: "Unable to send verification code"
+                                    error = friendlyAuthError(it)
                                 }
                                 loading = false
                             }
                         },
                         enabled = !loading && email.isNotBlank() && password.length >= 6
                     ) {
-                        Text("First time / set or reset password")
+                        Text("Set / reset password with email code")
                     }
                 } else {
                     Button(
@@ -208,7 +234,7 @@ fun LoginScreen(
                                 }.onSuccess {
                                     onSignedIn()
                                 }.onFailure {
-                                    error = it.localizedMessage ?: "Verification failed"
+                                    error = friendlyAuthError(it)
                                 }
                                 loading = false
                             }
@@ -236,10 +262,31 @@ fun LoginScreen(
                         },
                         enabled = !loading
                     ) {
-                        Text("Back to password")
+                        Text("Back to login")
                     }
                 }
             }
         }
+    }
+}
+
+private fun friendlyAuthError(throwable: Throwable): String {
+    val raw = throwable.localizedMessage.orEmpty()
+    val lower = raw.lowercase()
+    return when {
+        "invalid_credentials" in lower || "invalid login credentials" in lower ->
+            "Incorrect email or password. Try again, sign in with an email code, or reset your password."
+
+        "rate limit" in lower || "over_email_send_rate_limit" in lower ->
+            "Too many email requests. Please try again shortly."
+
+        "expired" in lower && ("otp" in lower || "token" in lower || "code" in lower) ->
+            "That email code has expired. Go back and request a new code."
+
+        "invalid" in lower && ("otp" in lower || "token" in lower || "code" in lower) ->
+            "That email code is invalid. Check the latest email and try again."
+
+        raw.isBlank() -> "Unable to sign in. Please try again."
+        else -> raw.lineSequence().firstOrNull()?.take(180) ?: "Unable to sign in. Please try again."
     }
 }
