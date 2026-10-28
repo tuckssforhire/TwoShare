@@ -13,8 +13,8 @@ android {
         applicationId = "com.twoshare.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 2
-        versionName = "0.2.0"
+        versionCode = 3
+        versionName = "0.3.0"
     }
 
     compileOptions {
@@ -53,4 +53,5 @@ dependencies {
     implementation("io.ktor:ktor-client-android:3.6.0")
 
     implementation("io.coil-kt:coil-compose:2.7.0")
+    implementation("io.github.webrtc-sdk:android:150.7871.01")
 }
