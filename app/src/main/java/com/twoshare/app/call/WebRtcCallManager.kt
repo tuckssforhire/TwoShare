@@ -67,7 +67,7 @@ class WebRtcCallManager(
             continualGatheringPolicy = PeerConnection.ContinualGatheringPolicy.GATHER_ONCE
         }
 
-        peerConnection = factory.createPeerConnection(rtcConfig, peerObserver)
+        peerConnection = factory.createPeerConnection(rtcConfig, createPeerObserver())
             ?: error("Unable to create WebRTC peer connection")
 
         audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
@@ -226,7 +226,7 @@ class WebRtcCallManager(
         video.addSink(remoteRenderer)
     }
 
-    private val peerObserver = object : PeerConnection.Observer {
+    private fun createPeerObserver(): PeerConnection.Observer = object : PeerConnection.Observer {
         override fun onSignalingChange(newState: PeerConnection.SignalingState) = Unit
 
         override fun onIceConnectionChange(newState: PeerConnection.IceConnectionState) {
