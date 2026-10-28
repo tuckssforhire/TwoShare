@@ -7,6 +7,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
+import com.twoshare.app.data.AuthManager
 import com.twoshare.app.data.SupabaseProvider
 import com.twoshare.app.data.TwoShareRepository
 import com.twoshare.app.model.CallRow
@@ -29,8 +30,14 @@ class MainActivity : ComponentActivity() {
         setContent {
             TwoShareTheme {
                 val repository = remember { TwoShareRepository() }
+                val authManager = remember { AuthManager() }
                 val scope = rememberCoroutineScope()
-                var signedIn by remember { mutableStateOf(repository.isSignedIn()) }
+
+                authManager.trustExistingSessionAfterUpgrade(this@MainActivity)
+
+                var signedIn by remember {
+                    mutableStateOf(authManager.isAppAuthorized(this@MainActivity))
+                }
                 var showMessenger by remember { mutableStateOf(false) }
                 var activeCall by remember { mutableStateOf<CallRow?>(null) }
                 var activeCallIncoming by remember { mutableStateOf(false) }
@@ -86,7 +93,7 @@ class MainActivity : ComponentActivity() {
                     }
                 } else {
                     LoginScreen(
-                        repository = repository,
+                        authManager = authManager,
                         onSignedIn = {
                             showMessenger = false
                             activeCall = null
