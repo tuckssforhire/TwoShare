@@ -1,5 +1,6 @@
 package com.twoshare.app.ui
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
@@ -7,9 +8,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import com.twoshare.app.R
 import com.twoshare.app.data.AuthManager
 import com.twoshare.app.data.PasswordSignInResult
 import kotlinx.coroutines.launch
@@ -45,6 +48,12 @@ fun LoginScreen(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
+                Image(
+                    painter = painterResource(R.drawable.twoshare_icon),
+                    contentDescription = "TwoShare logo",
+                    modifier = Modifier.size(112.dp)
+                )
+                Spacer(Modifier.height(14.dp))
                 Text("TwoShare", style = MaterialTheme.typography.headlineLarge)
                 Spacer(Modifier.height(8.dp))
                 Text("Private sharing and messenger for two", style = MaterialTheme.typography.bodyMedium)
