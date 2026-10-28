@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Rounded dark-purple app tile -->
+    <path
+        android:fillColor="#24105E"
+        android:pathData="M18,4 H90 C98,4 104,10 104,18 V90 C104,98 98,104 90,104 H18 C10,104 4,98 4,90 V18 C4,10 10,4 18,4 Z" />
+
+    <!-- subtle upper accent -->
+    <path
+        android:fillColor="#5D35E8"
+        android:fillAlpha="0.70"
+        android:pathData="M18,4 H90 C98,4 104,10 104,18 V31 C86,21 67,17 54,17 C39,17 22,21 4,31 V18 C4,10 10,4 18,4 Z" />
+
+    <!-- left person head -->
+    <path
+        android:fillColor="#45D8FF"
+        android:pathData="M33,16 C38.5,16 43,20.5 43,26 C43,31.5 38.5,36 33,36 C27.5,36 23,31.5 23,26 C23,20.5 27.5,16 33,16 Z" />
+
+    <!-- right person head -->
+    <path
+        android:fillColor="#FF8BC8"
+        android:pathData="M75,16 C80.5,16 85,20.5 85,26 C85,31.5 80.5,36 75,36 C69.5,36 65,31.5 65,26 C65,20.5 69.5,16 75,16 Z" />
+
+    <!-- left embracing body -->
+    <path
+        android:fillColor="#269DFF"
+        android:pathData="M16,48 C20,38 29,34 39,37 C47,39 52,45 57,51 C59,53 57,56 54,55 C47,52 42,48 37,47 C31,46 27,50 27,57 C27,66 35,73 48,77 C51,78 51,81 48,82 C31,80 19,71 15,60 C13.5,56 14,52 16,48 Z" />
+
+    <!-- right embracing body -->
+    <path
+        android:fillColor="#FF4FA3"
+        android:pathData="M92,48 C88,38 79,34 69,37 C61,39 56,45 51,51 C49,53 51,56 54,55 C61,52 66,48 71,47 C77,46 81,50 81,57 C81,66 73,73 60,77 C57,78 57,81 60,82 C77,80 89,71 93,60 C94.5,56 94,52 92,48 Z" />
+
+    <!-- heart -->
+    <path
+        android:fillColor="#FF4C91"
+        android:pathData="M54,42 C50,36 42,38 42,45 C42,51 48,55 54,59 C60,55 66,51 66,45 C66,38 58,36 54,42 Z" />
+
+    <!-- photo card -->
+    <path
+        android:fillColor="#F7F7FF"
+        android:pathData="M34,58 C34,55 36,53 39,53 H54 C57,53 59,55 59,58 V72 C59,75 57,77 54,77 H39 C36,77 34,75 34,72 Z" />
+    <path
+        android:fillColor="#78B6FF"
+        android:pathData="M38,57 H55 V70 L49,64 L45,68 L42,65 L38,70 Z" />
+    <path
+        android:fillColor="#FFC34A"
+        android:pathData="M50,58 C52,58 53.5,59.5 53.5,61.5 C53.5,63.5 52,65 50,65 C48,65 46.5,63.5 46.5,61.5 C46.5,59.5 48,58 50,58 Z" />
+
+    <!-- video card -->
+    <path
+        android:fillColor="#7A45EF"
+        android:pathData="M56,55 C56,52 58,50 61,50 H77 C80,50 82,52 82,55 V70 C82,73 80,75 77,75 H61 C58,75 56,73 56,70 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M64,56 L76,62.5 L64,69 Z" />
+
+    <!-- chat bubble -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M41,72 C41,68 44,65 48,65 H64 C68,65 71,68 71,72 V78 C71,82 68,85 64,85 H54 L49,89 V85 H48 C44,85 41,82 41,78 Z" />
+    <path
+        android:fillColor="#3D63ED"
+        android:pathData="M49,73 C50.7,73 52,74.3 52,76 C52,77.7 50.7,79 49,79 C47.3,79 46,77.7 46,76 C46,74.3 47.3,73 49,73 Z" />
+    <path
+        android:fillColor="#6A48EF"
+        android:pathData="M56,73 C57.7,73 59,74.3 59,76 C59,77.7 57.7,79 56,79 C54.3,79 53,77.7 53,76 C53,74.3 54.3,73 56,73 Z" />
+    <path
+        android:fillColor="#9D42EA"
+        android:pathData="M63,73 C64.7,73 66,74.3 66,76 C66,77.7 64.7,79 63,79 C61.3,79 60,77.7 60,76 C60,74.3 61.3,73 63,73 Z" />
+
+    <!-- small TwoShare initials for readability -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M27,91 H45 V95 H38 V103 H34 V95 H27 Z" />
+    <path
+        android:fillColor="#FF80BE"
+        android:pathData="M62,91 C67,89 75,90 78,93 L75,96 C72,94 68,94 66,95 C65,96 66,97 69,98 C75,99 79,101 79,105 C79,106 79,107 78,108 H71 C73,107 74,106 74,105 C74,103 71,103 68,102 C62,101 59,99 59,96 C59,94 60,92 62,91 Z" />
+</vector>
