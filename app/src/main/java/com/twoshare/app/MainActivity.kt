@@ -3,10 +3,23 @@ package com.twoshare.app
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.unit.dp
 import com.twoshare.app.data.AuthManager
 import com.twoshare.app.data.SupabaseProvider
 import com.twoshare.app.data.TwoShareRepository
@@ -41,7 +54,11 @@ class MainActivity : ComponentActivity() {
                 var incomingCall by remember { mutableStateOf<CallRow?>(null) }
 
                 LaunchedEffect(Unit) {
-                    signedIn = authManager.restoreTrustedSession(this@MainActivity)
+                    val startedAt = System.currentTimeMillis()
+                    val restored = authManager.restoreTrustedSession(this@MainActivity)
+                    val remainingSplash = 700L - (System.currentTimeMillis() - startedAt)
+                    if (remainingSplash > 0) delay(remainingSplash)
+                    signedIn = restored
                     authChecked = true
                 }
 
@@ -60,7 +77,7 @@ class MainActivity : ComponentActivity() {
                 }
 
                 if (!authChecked) {
-                    Text("Loading TwoShare…")
+                    TwoShareStartupScreen()
                 } else if (signedIn) {
                     val call = activeCall
                     if (call != null) {
@@ -137,6 +154,32 @@ class MainActivity : ComponentActivity() {
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun TwoShareStartupScreen() {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Image(
+                painter = painterResource(R.drawable.twoshare_icon),
+                contentDescription = "TwoShare logo",
+                modifier = Modifier.size(144.dp)
+            )
+            Spacer(Modifier.height(18.dp))
+            Text("TwoShare", style = MaterialTheme.typography.headlineLarge)
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "Private sharing for two",
+                style = MaterialTheme.typography.bodyMedium
+            )
         }
     }
 }
