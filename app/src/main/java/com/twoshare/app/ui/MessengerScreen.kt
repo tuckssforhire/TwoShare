@@ -5,6 +5,7 @@ import android.widget.MediaController
 import android.widget.VideoView
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -17,9 +18,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import coil.compose.AsyncImage
+import com.twoshare.app.R
 import com.twoshare.app.data.TwoShareRepository
 import com.twoshare.app.model.CallRow
 import com.twoshare.app.model.UiChatMessage
@@ -103,12 +106,22 @@ fun MessengerScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Column {
-                        Text("Messenger")
-                        Text(
-                            "Private chat for two",
-                            style = MaterialTheme.typography.labelSmall
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Image(
+                            painter = painterResource(R.drawable.twoshare_icon),
+                            contentDescription = "TwoShare logo",
+                            modifier = Modifier.size(32.dp)
                         )
+                        Column {
+                            Text("Messenger")
+                            Text(
+                                "Private chat for two",
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                        }
                     }
                 },
                 navigationIcon = {
