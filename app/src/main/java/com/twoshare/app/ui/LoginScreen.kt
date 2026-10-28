@@ -14,6 +14,11 @@ import com.twoshare.app.data.AuthManager
 import com.twoshare.app.data.PasswordSignInResult
 import kotlinx.coroutines.launch
 
+private enum class VerificationMode {
+    NEW_DEVICE,
+    SET_PASSWORD
+}
+
 @Composable
 fun LoginScreen(
     authManager: AuthManager,
@@ -24,7 +29,7 @@ fun LoginScreen(
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var code by remember { mutableStateOf("") }
-    var needsEmailCode by remember { mutableStateOf(false) }
+    var verificationMode by remember { mutableStateOf<VerificationMode?>(null) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var info by remember { mutableStateOf<String?>(null) }
@@ -54,26 +59,26 @@ fun LoginScreen(
                     modifier = Modifier.fillMaxWidth(),
                     label = { Text("Email") },
                     singleLine = true,
-                    enabled = !needsEmailCode && !loading,
+                    enabled = verificationMode == null && !loading,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email)
                 )
 
-                if (!needsEmailCode) {
-                    Spacer(Modifier.height(12.dp))
-                    OutlinedTextField(
-                        value = password,
-                        onValueChange = {
-                            password = it
-                            error = null
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text("Password") },
-                        singleLine = true,
-                        enabled = !loading,
-                        visualTransformation = PasswordVisualTransformation(),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
-                    )
-                } else {
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = password,
+                    onValueChange = {
+                        password = it
+                        error = null
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Password") },
+                    singleLine = true,
+                    enabled = verificationMode == null && !loading,
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
+                )
+
+                if (verificationMode != null) {
                     Spacer(Modifier.height(12.dp))
                     OutlinedTextField(
                         value = code,
@@ -101,7 +106,7 @@ fun LoginScreen(
 
                 Spacer(Modifier.height(20.dp))
 
-                if (!needsEmailCode) {
+                if (verificationMode == null) {
                     Button(
                         onClick = {
                             scope.launch {
@@ -118,9 +123,8 @@ fun LoginScreen(
                                     when (result) {
                                         PasswordSignInResult.TRUSTED_DEVICE -> onSignedIn()
                                         PasswordSignInResult.EMAIL_CODE_REQUIRED -> {
-                                            password = ""
-                                            needsEmailCode = true
-                                            info = "New device detected. Enter the verification code sent to your email. You will not need the code again on this device."
+                                            verificationMode = VerificationMode.NEW_DEVICE
+                                            info = "New device detected. Enter the code sent to your email. After verification, this phone will be trusted."
                                         }
                                     }
                                 }.onFailure {
@@ -141,22 +145,62 @@ fun LoginScreen(
                             Text("Sign in")
                         }
                     }
-                } else {
-                    Button(
+
+                    Spacer(Modifier.height(8.dp))
+                    TextButton(
                         onClick = {
                             scope.launch {
                                 loading = true
                                 error = null
+                                info = null
                                 runCatching {
-                                    authManager.verifyNewDevice(
-                                        context = context,
-                                        email = email,
-                                        code = code
-                                    )
-                                }.onSuccess { onSignedIn() }
-                                    .onFailure {
-                                        error = it.localizedMessage ?: "Verification failed"
+                                    require(password.length >= 6) {
+                                        "Enter the password you want to use first."
                                     }
+                                    authManager.startPasswordSetup(email)
+                                }.onSuccess {
+                                    verificationMode = VerificationMode.SET_PASSWORD
+                                    info = "Enter the email code once to save this password and trust this phone."
+                                }.onFailure {
+                                    error = it.localizedMessage ?: "Unable to send verification code"
+                                }
+                                loading = false
+                            }
+                        },
+                        enabled = !loading && email.isNotBlank() && password.length >= 6
+                    ) {
+                        Text("First time / set or reset password")
+                    }
+                } else {
+                    Button(
+                        onClick = {
+                            val mode = verificationMode ?: return@Button
+                            scope.launch {
+                                loading = true
+                                error = null
+                                runCatching {
+                                    when (mode) {
+                                        VerificationMode.NEW_DEVICE -> {
+                                            authManager.verifyNewDevice(
+                                                context = context,
+                                                email = email,
+                                                code = code
+                                            )
+                                        }
+                                        VerificationMode.SET_PASSWORD -> {
+                                            authManager.verifyAndSetPassword(
+                                                context = context,
+                                                email = email,
+                                                code = code,
+                                                newPassword = password
+                                            )
+                                        }
+                                    }
+                                }.onSuccess {
+                                    onSignedIn()
+                                }.onFailure {
+                                    error = it.localizedMessage ?: "Verification failed"
+                                }
                                 loading = false
                             }
                         },
@@ -169,16 +213,15 @@ fun LoginScreen(
                                 strokeWidth = 2.dp
                             )
                         } else {
-                            Text("Verify this device")
+                            Text("Verify email code")
                         }
                     }
 
                     Spacer(Modifier.height(8.dp))
                     TextButton(
                         onClick = {
-                            needsEmailCode = false
+                            verificationMode = null
                             code = ""
-                            password = ""
                             info = null
                             error = null
                         },
