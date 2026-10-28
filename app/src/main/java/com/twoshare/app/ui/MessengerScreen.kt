@@ -21,6 +21,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import coil.compose.AsyncImage
 import com.twoshare.app.data.TwoShareRepository
+import com.twoshare.app.model.CallRow
 import com.twoshare.app.model.UiChatMessage
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -33,7 +34,8 @@ private val quickReactions = listOf("👍", "❤️", "😂", "😮", "😢", "�
 @Composable
 fun MessengerScreen(
     repository: TwoShareRepository,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onStartCall: (CallRow, Boolean) -> Unit
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -44,6 +46,7 @@ fun MessengerScreen(
     var attachment by remember { mutableStateOf<android.net.Uri?>(null) }
     var loading by remember { mutableStateOf(true) }
     var sending by remember { mutableStateOf(false) }
+    var startingCall by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
     suspend fun refresh() {
@@ -54,6 +57,18 @@ fun MessengerScreen(
             }
             .onFailure { error = it.localizedMessage ?: "Unable to load messages" }
         loading = false
+    }
+
+    fun startCall(video: Boolean) {
+        if (startingCall) return
+        scope.launch {
+            startingCall = true
+            error = null
+            runCatching { repository.createOutgoingCall(video) }
+                .onSuccess { call -> onStartCall(call, false) }
+                .onFailure { error = it.localizedMessage ?: "Unable to start call" }
+            startingCall = false
+        }
     }
 
     LaunchedEffect(Unit) {
@@ -97,11 +112,17 @@ fun MessengerScreen(
                     }
                 },
                 navigationIcon = {
-                    TextButton(onClick = onBack) { Text("‹ Back") }
+                    TextButton(onClick = onBack) { Text("‹") }
                 },
                 actions = {
+                    TextButton(onClick = { startCall(false) }, enabled = !startingCall) {
+                        Text("📞")
+                    }
+                    TextButton(onClick = { startCall(true) }, enabled = !startingCall) {
+                        Text("🎥")
+                    }
                     TextButton(onClick = { scope.launch { refresh() } }) {
-                        Text("Refresh")
+                        Text("↻")
                     }
                 }
             )
