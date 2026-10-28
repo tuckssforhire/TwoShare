@@ -6,20 +6,25 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
-import com.twoshare.app.data.TwoShareRepository
+import com.twoshare.app.data.AuthManager
+import com.twoshare.app.data.PasswordSignInResult
 import kotlinx.coroutines.launch
 
 @Composable
 fun LoginScreen(
-    repository: TwoShareRepository,
+    authManager: AuthManager,
     onSignedIn: () -> Unit
 ) {
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var email by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
     var code by remember { mutableStateOf("") }
-    var emailSent by remember { mutableStateOf(false) }
+    var needsEmailCode by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var info by remember { mutableStateOf<String?>(null) }
@@ -37,7 +42,7 @@ fun LoginScreen(
             ) {
                 Text("TwoShare", style = MaterialTheme.typography.headlineLarge)
                 Spacer(Modifier.height(8.dp))
-                Text("Private photo sharing for two", style = MaterialTheme.typography.bodyMedium)
+                Text("Private sharing and messenger for two", style = MaterialTheme.typography.bodyMedium)
                 Spacer(Modifier.height(28.dp))
 
                 OutlinedTextField(
@@ -49,11 +54,26 @@ fun LoginScreen(
                     modifier = Modifier.fillMaxWidth(),
                     label = { Text("Email") },
                     singleLine = true,
-                    enabled = !emailSent && !loading,
+                    enabled = !needsEmailCode && !loading,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email)
                 )
 
-                if (emailSent) {
+                if (!needsEmailCode) {
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = password,
+                        onValueChange = {
+                            password = it
+                            error = null
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Password") },
+                        singleLine = true,
+                        enabled = !loading,
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
+                    )
+                } else {
                     Spacer(Modifier.height(12.dp))
                     OutlinedTextField(
                         value = code,
@@ -62,8 +82,9 @@ fun LoginScreen(
                             error = null
                         },
                         modifier = Modifier.fillMaxWidth(),
-                        label = { Text("Email code (if shown)") },
+                        label = { Text("Email verification code") },
                         singleLine = true,
+                        enabled = !loading,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword)
                     )
                 }
@@ -80,26 +101,36 @@ fun LoginScreen(
 
                 Spacer(Modifier.height(20.dp))
 
-                if (!emailSent) {
+                if (!needsEmailCode) {
                     Button(
                         onClick = {
                             scope.launch {
                                 loading = true
                                 error = null
                                 info = null
-                                runCatching { repository.sendSignInEmail(email) }
-                                    .onSuccess {
-                                        emailSent = true
-                                        info = "Check your email. If Supabase shows a sign-in link, tap it. If it shows a code, enter the code here."
+                                runCatching {
+                                    authManager.signInWithPassword(
+                                        context = context,
+                                        email = email,
+                                        password = password
+                                    )
+                                }.onSuccess { result ->
+                                    when (result) {
+                                        PasswordSignInResult.TRUSTED_DEVICE -> onSignedIn()
+                                        PasswordSignInResult.EMAIL_CODE_REQUIRED -> {
+                                            password = ""
+                                            needsEmailCode = true
+                                            info = "New device detected. Enter the verification code sent to your email. You will not need the code again on this device."
+                                        }
                                     }
-                                    .onFailure {
-                                        error = it.localizedMessage ?: "Unable to send sign-in email"
-                                    }
+                                }.onFailure {
+                                    error = it.localizedMessage ?: "Unable to sign in"
+                                }
                                 loading = false
                             }
                         },
                         modifier = Modifier.fillMaxWidth(),
-                        enabled = !loading && email.isNotBlank()
+                        enabled = !loading && email.isNotBlank() && password.isNotBlank()
                     ) {
                         if (loading) {
                             CircularProgressIndicator(
@@ -107,7 +138,7 @@ fun LoginScreen(
                                 strokeWidth = 2.dp
                             )
                         } else {
-                            Text("Send sign-in email")
+                            Text("Sign in")
                         }
                     }
                 } else {
@@ -116,8 +147,13 @@ fun LoginScreen(
                             scope.launch {
                                 loading = true
                                 error = null
-                                runCatching { repository.verifyEmailCode(email, code) }
-                                    .onSuccess { onSignedIn() }
+                                runCatching {
+                                    authManager.verifyNewDevice(
+                                        context = context,
+                                        email = email,
+                                        code = code
+                                    )
+                                }.onSuccess { onSignedIn() }
                                     .onFailure {
                                         error = it.localizedMessage ?: "Verification failed"
                                     }
@@ -133,21 +169,22 @@ fun LoginScreen(
                                 strokeWidth = 2.dp
                             )
                         } else {
-                            Text("Verify code")
+                            Text("Verify this device")
                         }
                     }
 
                     Spacer(Modifier.height(8.dp))
                     TextButton(
                         onClick = {
-                            emailSent = false
+                            needsEmailCode = false
                             code = ""
+                            password = ""
                             info = null
                             error = null
                         },
                         enabled = !loading
                     ) {
-                        Text("Use another email")
+                        Text("Back to password")
                     }
                 }
             }
