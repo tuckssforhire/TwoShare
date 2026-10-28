@@ -272,6 +272,7 @@ private fun MessageBubble(
     } else {
         MaterialTheme.colorScheme.surfaceVariant
     }
+    var reactionPickerOpen by remember(message.id) { mutableStateOf(false) }
 
     val timeText = remember(message.createdAt) {
         runCatching {
@@ -326,11 +327,30 @@ private fun MessageBubble(
             }
 
             Spacer(Modifier.height(5.dp))
-            Text(timeText, style = MaterialTheme.typography.labelSmall)
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    timeText,
+                    style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier.weight(1f)
+                )
+                TextButton(
+                    onClick = { reactionPickerOpen = !reactionPickerOpen },
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                    modifier = Modifier.height(32.dp)
+                ) {
+                    Text(if (reactionPickerOpen) "Close" else "React")
+                }
+            }
 
             if (message.reactions.isNotEmpty()) {
-                Spacer(Modifier.height(6.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = Modifier.padding(top = 4.dp)
+                ) {
                     message.reactions.entries
                         .sortedBy { quickReactions.indexOf(it.key).let { i -> if (i < 0) 99 else i } }
                         .forEach { (emoji, users) ->
@@ -348,15 +368,28 @@ private fun MessageBubble(
                 }
             }
 
-            Spacer(Modifier.height(5.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                quickReactions.forEach { emoji ->
-                    TextButton(
-                        onClick = { onReaction(emoji) },
-                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
-                        modifier = Modifier.height(34.dp)
+            if (reactionPickerOpen) {
+                Surface(
+                    modifier = Modifier.padding(top = 6.dp),
+                    shape = RoundedCornerShape(18.dp),
+                    tonalElevation = 2.dp
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+                        horizontalArrangement = Arrangement.spacedBy(1.dp)
                     ) {
-                        Text(emoji)
+                        quickReactions.forEach { emoji ->
+                            TextButton(
+                                onClick = {
+                                    onReaction(emoji)
+                                    reactionPickerOpen = false
+                                },
+                                contentPadding = PaddingValues(horizontal = 5.dp, vertical = 0.dp),
+                                modifier = Modifier.height(36.dp)
+                            ) {
+                                Text(emoji)
+                            }
+                        }
                     }
                 }
             }
