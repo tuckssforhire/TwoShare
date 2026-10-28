@@ -67,6 +67,14 @@ class AuthManager {
         return PasswordSignInResult.EMAIL_CODE_REQUIRED
     }
 
+    suspend fun startEmailCodeSignIn(email: String) {
+        val normalized = normalizeEmail(email)
+        if (supabase.auth.currentUserOrNull() != null) {
+            supabase.auth.signOut()
+        }
+        sendOtp(normalized)
+    }
+
     suspend fun startPasswordSetup(email: String) {
         val normalized = normalizeEmail(email)
         if (supabase.auth.currentUserOrNull() != null) {
