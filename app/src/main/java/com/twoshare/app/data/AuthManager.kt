@@ -23,19 +23,22 @@ class AuthManager {
         "misamitchlailarene@gmail.com"
     )
 
-    fun trustExistingSessionAfterUpgrade(context: Context) {
-        val prefs = prefs(context)
-        if (prefs.getBoolean(KEY_TRUST_MIGRATION_DONE, false)) return
+    suspend fun restoreTrustedSession(context: Context): Boolean {
+        val user = supabase.auth.currentUserOrNull() ?: return false
+        val userId = user.id
 
-        currentUserId()?.let { userId ->
-            markDeviceTrusted(context, userId)
+        if (!isDeviceTrusted(context, userId)) {
+            supabase.auth.signOut()
+            return false
         }
-        prefs.edit().putBoolean(KEY_TRUST_MIGRATION_DONE, true).apply()
-    }
 
-    fun isAppAuthorized(context: Context): Boolean {
-        val userId = currentUserId() ?: return false
-        return isDeviceTrusted(context, userId)
+        return runCatching {
+            requireAllowedUser()
+            true
+        }.getOrElse {
+            supabase.auth.signOut()
+            false
+        }
     }
 
     suspend fun signInWithPassword(
@@ -56,12 +59,20 @@ class AuthManager {
             return PasswordSignInResult.TRUSTED_DEVICE
         }
 
-        supabase.auth.signInWith(OTP) {
-            this.email = normalized
-            createUser = false
-        }
-
+        // Password has already been verified. Sign out the first-factor session
+        // before sending the email code so the app remains locked until the new
+        // device verification is completed.
+        supabase.auth.signOut()
+        sendOtp(normalized)
         return PasswordSignInResult.EMAIL_CODE_REQUIRED
+    }
+
+    suspend fun startPasswordSetup(email: String) {
+        val normalized = normalizeEmail(email)
+        if (supabase.auth.currentUserOrNull() != null) {
+            supabase.auth.signOut()
+        }
+        sendOtp(normalized)
     }
 
     suspend fun verifyNewDevice(
@@ -69,6 +80,29 @@ class AuthManager {
         email: String,
         code: String
     ) {
+        val profile = verifyOtpAndRequireAllowed(email, code)
+        markDeviceTrusted(context, profile.id)
+    }
+
+    suspend fun verifyAndSetPassword(
+        context: Context,
+        email: String,
+        code: String,
+        newPassword: String
+    ) {
+        require(newPassword.length >= 6) { "Password must be at least 6 characters." }
+
+        val profile = verifyOtpAndRequireAllowed(email, code)
+        supabase.auth.updateUser {
+            password = newPassword
+        }
+        markDeviceTrusted(context, profile.id)
+    }
+
+    private suspend fun verifyOtpAndRequireAllowed(
+        email: String,
+        code: String
+    ): ProfileRow {
         val normalized = normalizeEmail(email)
         val cleanedCode = code.trim()
         require(cleanedCode.isNotEmpty()) { "Enter the code from your email." }
@@ -79,8 +113,14 @@ class AuthManager {
             token = cleanedCode
         )
 
-        val profile = requireAllowedUser()
-        markDeviceTrusted(context, profile.id)
+        return requireAllowedUser()
+    }
+
+    private suspend fun sendOtp(email: String) {
+        supabase.auth.signInWith(OTP) {
+            this.email = email
+            createUser = false
+        }
     }
 
     private fun currentUserId(): String? = supabase.auth.currentUserOrNull()?.id
@@ -131,7 +171,9 @@ class AuthManager {
     private fun trustKey(userId: String) = "trusted_device_$userId"
 
     companion object {
-        private const val PREFS_NAME = "twoshare_auth"
-        private const val KEY_TRUST_MIGRATION_DONE = "trusted_device_migration_v1"
+        // v2 deliberately ignores the incomplete v0.3.3 trust migration so
+        // both accounts perform one clean email verification when enabling
+        // password login for the first time.
+        private const val PREFS_NAME = "twoshare_auth_v2"
     }
 }
