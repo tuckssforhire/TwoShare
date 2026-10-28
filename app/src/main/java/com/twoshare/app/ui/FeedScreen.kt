@@ -1,5 +1,6 @@
 package com.twoshare.app.ui
 
+import android.content.Intent
 import android.text.format.DateUtils
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -34,6 +35,7 @@ fun FeedScreen(
     var posts by remember { mutableStateOf(emptyList<FeedPost>()) }
     var loading by remember { mutableStateOf(true) }
     var uploading by remember { mutableStateOf(false) }
+    var uploadProgress by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var commentsPost by remember { mutableStateOf<FeedPost?>(null) }
 
@@ -55,14 +57,45 @@ fun FeedScreen(
         }
     }
 
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        if (uri != null) {
+    val picker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris ->
+        if (uris.isNotEmpty()) {
+            uris.forEach { uri ->
+                runCatching {
+                    context.contentResolver.takePersistableUriPermission(
+                        uri,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    )
+                }
+            }
+
             scope.launch {
                 uploading = true
                 error = null
-                runCatching { repository.uploadPhoto(context, uri) }
-                    .onSuccess { refresh() }
-                    .onFailure { error = it.localizedMessage ?: "Upload failed" }
+                var failed = 0
+                var firstFailure: String? = null
+
+                uris.forEachIndexed { index, uri ->
+                    uploadProgress = "Uploading ${index + 1} of ${uris.size}"
+                    runCatching { repository.uploadPhoto(context, uri) }
+                        .onFailure {
+                            failed += 1
+                            if (firstFailure == null) {
+                                firstFailure = it.localizedMessage ?: "Upload failed"
+                            }
+                        }
+                }
+
+                refresh()
+                if (failed > 0) {
+                    error = if (failed == uris.size) {
+                        firstFailure ?: "Upload failed"
+                    } else {
+                        "$failed of ${uris.size} photos failed to upload. ${firstFailure.orEmpty()}".trim()
+                    }
+                }
+                uploadProgress = null
                 uploading = false
             }
         }
@@ -92,13 +125,22 @@ fun FeedScreen(
         },
         floatingActionButton = {
             FloatingActionButton(
-                onClick = { picker.launch("image/*") },
+                onClick = {
+                    if (!uploading) picker.launch(arrayOf("image/*"))
+                },
                 modifier = Modifier.padding(bottom = 4.dp)
             ) {
                 if (uploading) {
-                    CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp),
+                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.width(8.dp))
+                        Text(uploadProgress ?: "Uploading")
+                    }
                 } else {
-                    Text("+ Photo")
+                    Text("+ Photos")
                 }
             }
         }
@@ -119,7 +161,7 @@ fun FeedScreen(
                     CircularProgressIndicator()
                 }
                 posts.isEmpty() -> Box(Modifier.fillMaxSize().padding(32.dp)) {
-                    Text("No photos yet. Tap + Photo to share the first one.")
+                    Text("No photos yet. Tap + Photos to share one or several photos.")
                 }
                 else -> LazyColumn(
                     modifier = Modifier.fillMaxSize(),
