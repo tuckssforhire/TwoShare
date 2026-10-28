@@ -12,6 +12,7 @@ class WebRtcCallManager(
     private val localRenderer: SurfaceViewRenderer,
     private val remoteRenderer: SurfaceViewRenderer,
     private val onLocalSdpReady: (String) -> Unit,
+    private val onLocalIceCandidate: (IceCandidate) -> Unit,
     private val onConnectionState: (String) -> Unit,
     private val onError: (String) -> Unit
 ) {
@@ -33,6 +34,8 @@ class WebRtcCallManager(
     private var audioSource: AudioSource? = null
     private var surfaceTextureHelper: SurfaceTextureHelper? = null
     private var localSdpDispatched = false
+    private var remoteDescriptionReady = false
+    private val pendingRemoteCandidates = mutableListOf<IceCandidate>()
     private var disposed = false
 
     init {
@@ -64,7 +67,7 @@ class WebRtcCallManager(
         )
         val rtcConfig = PeerConnection.RTCConfiguration(iceServers).apply {
             sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
-            continualGatheringPolicy = PeerConnection.ContinualGatheringPolicy.GATHER_ONCE
+            continualGatheringPolicy = PeerConnection.ContinualGatheringPolicy.GATHER_CONTINUALLY
         }
 
         peerConnection = factory.createPeerConnection(rtcConfig, createPeerObserver())
@@ -114,22 +117,38 @@ class WebRtcCallManager(
 
     fun startCaller() {
         localSdpDispatched = false
+        postState("Creating call…")
         peerConnection.createOffer(object : SimpleSdpObserver() {
             override fun onCreateSuccess(description: SessionDescription) {
                 setLocalDescription(description)
+            }
+
+            override fun onCreateFailure(error: String) {
+                postError("Unable to create call offer: $error")
             }
         }, MediaConstraints())
     }
 
     fun startCallee(offerSdp: String) {
         localSdpDispatched = false
+        postState("Answering…")
         peerConnection.setRemoteDescription(object : SimpleSdpObserver() {
             override fun onSetSuccess() {
+                remoteDescriptionReady = true
+                flushPendingRemoteCandidates()
                 peerConnection.createAnswer(object : SimpleSdpObserver() {
                     override fun onCreateSuccess(description: SessionDescription) {
                         setLocalDescription(description)
                     }
+
+                    override fun onCreateFailure(error: String) {
+                        postError("Unable to create call answer: $error")
+                    }
                 }, MediaConstraints())
+            }
+
+            override fun onSetFailure(error: String) {
+                postError("Unable to apply call offer: $error")
             }
         }, SessionDescription(SessionDescription.Type.OFFER, offerSdp))
     }
@@ -138,7 +157,13 @@ class WebRtcCallManager(
         peerConnection.setRemoteDescription(
             object : SimpleSdpObserver() {
                 override fun onSetSuccess() {
-                    postState("Connecting")
+                    remoteDescriptionReady = true
+                    flushPendingRemoteCandidates()
+                    postState("Connecting…")
+                }
+
+                override fun onSetFailure(error: String) {
+                    postError("Unable to apply call answer: $error")
                 }
             },
             SessionDescription(SessionDescription.Type.ANSWER, answerSdp)
@@ -148,11 +173,11 @@ class WebRtcCallManager(
     private fun setLocalDescription(description: SessionDescription) {
         peerConnection.setLocalDescription(object : SimpleSdpObserver() {
             override fun onSetSuccess() {
-                if (peerConnection.iceGatheringState() == PeerConnection.IceGatheringState.COMPLETE) {
-                    dispatchLocalDescription()
-                } else {
-                    mainHandler.postDelayed({ dispatchLocalDescription() }, 8_000)
-                }
+                dispatchLocalDescription()
+            }
+
+            override fun onSetFailure(error: String) {
+                postError("Unable to set local call description: $error")
             }
         }, description)
     }
@@ -162,6 +187,22 @@ class WebRtcCallManager(
         val description = peerConnection.localDescription ?: return
         localSdpDispatched = true
         mainHandler.post { onLocalSdpReady(description.description) }
+    }
+
+    fun addRemoteIceCandidate(sdpMid: String?, sdpMLineIndex: Int, candidate: String) {
+        if (disposed) return
+        val iceCandidate = IceCandidate(sdpMid, sdpMLineIndex, candidate)
+        if (!remoteDescriptionReady) {
+            pendingRemoteCandidates += iceCandidate
+            return
+        }
+        peerConnection.addIceCandidate(iceCandidate)
+    }
+
+    private fun flushPendingRemoteCandidates() {
+        if (!remoteDescriptionReady || pendingRemoteCandidates.isEmpty()) return
+        pendingRemoteCandidates.toList().forEach { peerConnection.addIceCandidate(it) }
+        pendingRemoteCandidates.clear()
     }
 
     fun setMuted(muted: Boolean) {
@@ -233,9 +274,9 @@ class WebRtcCallManager(
             when (newState) {
                 PeerConnection.IceConnectionState.CONNECTED,
                 PeerConnection.IceConnectionState.COMPLETED -> postState("Connected")
-                PeerConnection.IceConnectionState.CHECKING -> postState("Connecting")
-                PeerConnection.IceConnectionState.FAILED -> postError("Call connection failed.")
-                PeerConnection.IceConnectionState.DISCONNECTED -> postState("Reconnecting")
+                PeerConnection.IceConnectionState.CHECKING -> postState("Connecting…")
+                PeerConnection.IceConnectionState.FAILED -> postError("Call connection failed. A TURN relay may be required on this network.")
+                PeerConnection.IceConnectionState.DISCONNECTED -> postState("Reconnecting…")
                 else -> Unit
             }
         }
@@ -243,22 +284,22 @@ class WebRtcCallManager(
         override fun onConnectionChange(newState: PeerConnection.PeerConnectionState) {
             when (newState) {
                 PeerConnection.PeerConnectionState.CONNECTED -> postState("Connected")
-                PeerConnection.PeerConnectionState.CONNECTING -> postState("Connecting")
-                PeerConnection.PeerConnectionState.FAILED -> postError("Call connection failed.")
-                PeerConnection.PeerConnectionState.DISCONNECTED -> postState("Reconnecting")
+                PeerConnection.PeerConnectionState.CONNECTING -> postState("Connecting…")
+                PeerConnection.PeerConnectionState.FAILED -> postError("Call connection failed. A TURN relay may be required on this network.")
+                PeerConnection.PeerConnectionState.DISCONNECTED -> postState("Reconnecting…")
                 else -> Unit
             }
         }
 
         override fun onIceConnectionReceivingChange(receiving: Boolean) = Unit
+        override fun onIceGatheringChange(newState: PeerConnection.IceGatheringState) = Unit
 
-        override fun onIceGatheringChange(newState: PeerConnection.IceGatheringState) {
-            if (newState == PeerConnection.IceGatheringState.COMPLETE) {
-                dispatchLocalDescription()
+        override fun onIceCandidate(candidate: IceCandidate) {
+            mainHandler.post {
+                if (!disposed) onLocalIceCandidate(candidate)
             }
         }
 
-        override fun onIceCandidate(candidate: IceCandidate) = Unit
         override fun onIceCandidatesRemoved(candidates: Array<IceCandidate>) = Unit
         override fun onAddStream(stream: MediaStream) {
             stream.videoTracks.firstOrNull()?.let { attachRemoteVideo(it) }
