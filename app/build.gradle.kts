@@ -1,3 +1,5 @@
+import java.util.Base64
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -66,8 +68,7 @@ val generateLauncherIcon by tasks.registering {
     outputs.files(launcher, round)
 
     doLast {
-        val bytes = java.util.Base64.getMimeDecoder()
-            .decode(encodedIcon.asFile.readText().trim())
+        val bytes = Base64.getMimeDecoder().decode(encodedIcon.asFile.readText().trim())
         outputDir.asFile.mkdirs()
         launcher.asFile.writeBytes(bytes)
         round.asFile.writeBytes(bytes)
