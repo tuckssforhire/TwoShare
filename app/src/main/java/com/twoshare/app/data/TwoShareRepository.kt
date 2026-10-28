@@ -306,7 +306,9 @@ class TwoShareRepository {
                 calleeId = other.id,
                 isVideo = isVideo
             )
-        ).decodeSingle<CallRow>()
+        ) {
+            select()
+        }.decodeSingle<CallRow>()
     }
 
     suspend fun findIncomingCall(): CallRow? {
