@@ -19,6 +19,8 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import com.twoshare.app.call.WebRtcCallManager
 import com.twoshare.app.data.TwoShareRepository
+import com.twoshare.app.data.loadRemoteIceCandidates
+import com.twoshare.app.data.publishIceCandidate
 import com.twoshare.app.model.CallRow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -36,6 +38,7 @@ fun CallScreen(
     val scope = rememberCoroutineScope()
     val localRenderer = remember { SurfaceViewRenderer(context) }
     val remoteRenderer = remember { SurfaceViewRenderer(context) }
+    val appliedRemoteCandidateIds = remember { mutableSetOf<String>() }
 
     val requiredPermissions = remember(initialCall.isVideo) {
         buildList {
@@ -126,9 +129,24 @@ fun CallScreen(
                                 callState = "Connecting…"
                             } else {
                                 repository.setCallOffer(initialCall.id, sdp)
+                                callState = "Ringing…"
                             }
                         }.onFailure {
-                            error = it.localizedMessage ?: "Unable to send call setup."
+                            error = "Unable to send call setup: ${it.localizedMessage ?: "unknown error"}"
+                        }
+                    }
+                },
+                onLocalIceCandidate = { candidate ->
+                    scope.launch {
+                        runCatching {
+                            repository.publishIceCandidate(
+                                callId = initialCall.id,
+                                sdpMid = candidate.sdpMid,
+                                sdpMLineIndex = candidate.sdpMLineIndex,
+                                candidate = candidate.sdp
+                            )
+                        }.onFailure {
+                            error = "Unable to send network candidate: ${it.localizedMessage ?: "unknown error"}"
                         }
                     }
                 },
@@ -159,7 +177,7 @@ fun CallScreen(
         while (isActive && !answerStarted) {
             val fresh = runCatching { repository.getCall(initialCall.id) }.getOrNull()
             if (fresh == null) {
-                delay(700)
+                delay(500)
                 continue
             }
             latestCall = fresh
@@ -175,7 +193,29 @@ fun CallScreen(
                 rtc.startCallee(offer)
                 break
             }
-            delay(500)
+            delay(400)
+        }
+    }
+
+    LaunchedEffect(manager) {
+        val rtc = manager ?: return@LaunchedEffect
+        while (isActive && !finished) {
+            runCatching { repository.loadRemoteIceCandidates(initialCall.id) }
+                .onSuccess { candidates ->
+                    candidates.forEach { candidate ->
+                        if (appliedRemoteCandidateIds.add(candidate.id)) {
+                            rtc.addRemoteIceCandidate(
+                                sdpMid = candidate.sdpMid,
+                                sdpMLineIndex = candidate.sdpMLineIndex,
+                                candidate = candidate.candidate
+                            )
+                        }
+                    }
+                }
+                .onFailure {
+                    error = "Unable to receive network candidate: ${it.localizedMessage ?: "unknown error"}"
+                }
+            delay(400)
         }
     }
 
@@ -203,7 +243,7 @@ fun CallScreen(
                     }
                 }
             }
-            delay(700)
+            delay(500)
         }
     }
 
@@ -272,7 +312,11 @@ fun CallScreen(
             Text(callState, color = Color.White.copy(alpha = 0.8f))
             error?.let {
                 Spacer(Modifier.height(8.dp))
-                Text(it, color = MaterialTheme.colorScheme.error)
+                Text(
+                    it,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(horizontal = 70.dp)
+                )
             }
         }
 
