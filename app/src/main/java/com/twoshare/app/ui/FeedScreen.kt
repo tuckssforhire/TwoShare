@@ -4,18 +4,22 @@ import android.content.Intent
 import android.text.format.DateUtils
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.twoshare.app.R
 import com.twoshare.app.data.TwoShareRepository
 import com.twoshare.app.model.FeedPost
 import kotlinx.coroutines.delay
@@ -104,7 +108,19 @@ fun FeedScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("TwoShare") },
+                title = {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Image(
+                            painter = painterResource(R.mipmap.ic_launcher),
+                            contentDescription = "TwoShare logo",
+                            modifier = Modifier.size(34.dp)
+                        )
+                        Text("TwoShare")
+                    }
+                },
                 actions = {
                     TextButton(onClick = onOpenMessenger) {
                         Text("Chat")
@@ -133,7 +149,7 @@ fun FeedScreen(
                 if (uploading) {
                     Row(
                         modifier = Modifier.padding(horizontal = 12.dp),
-                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                         Spacer(Modifier.width(8.dp))
