@@ -87,15 +87,23 @@ class TwoShareRepository {
         val bucket = supabase.storage.from("twoshare")
 
         return posts.map { post ->
-            val signedUrl = signedUrlCache.getOrPut(post.imagePath) {
-                bucket.createSignedUrl(post.imagePath, 24.hours)
+            val paths = post.imagePaths
+                .filter { it.isNotBlank() }
+                .ifEmpty { listOf(post.imagePath) }
+                .distinct()
+
+            val urls = paths.map { path ->
+                signedUrlCache.getOrPut(path) {
+                    bucket.createSignedUrl(path, 24.hours)
+                }
             }
+
             FeedPost(
                 id = post.id,
                 userId = post.userId,
                 userName = profiles[post.userId]?.displayName ?: "User",
-                imagePath = post.imagePath,
-                imageUrl = signedUrl,
+                imagePaths = paths,
+                imageUrls = urls,
                 createdAt = post.createdAt,
                 likedBy = likes[post.id].orEmpty().map { it.userId }.toSet()
             )
@@ -103,24 +111,46 @@ class TwoShareRepository {
     }
 
     suspend fun uploadPhoto(context: Context, imageUri: Uri) {
+        uploadPhotos(context, listOf(imageUri))
+    }
+
+    suspend fun uploadPhotos(context: Context, imageUris: List<Uri>) {
         val uid = currentUserId() ?: error("Not signed in")
         requireAllowedUser()
+        require(imageUris.isNotEmpty()) { "Select at least one photo." }
 
-        val bytes = context.contentResolver.openInputStream(imageUri)?.use { it.readBytes() }
-            ?: error("Unable to read selected image")
-        require(bytes.size <= 15 * 1024 * 1024) { "Image must be 15 MB or smaller." }
+        data class PreparedPhoto(val bytes: ByteArray, val extension: String)
 
-        val mime = context.contentResolver.getType(imageUri)
-        val extension = fileExtension(mime, "jpg")
+        val prepared = imageUris.mapIndexed { index, imageUri ->
+            val bytes = context.contentResolver.openInputStream(imageUri)?.use { it.readBytes() }
+                ?: error("Unable to read selected image ${index + 1}.")
+            require(bytes.size <= 15 * 1024 * 1024) {
+                "Photo ${index + 1} must be 15 MB or smaller."
+            }
+            val mime = context.contentResolver.getType(imageUri)
+            PreparedPhoto(
+                bytes = bytes,
+                extension = fileExtension(mime, "jpg")
+            )
+        }
 
-        val path = "$uid/${UUID.randomUUID()}.$extension"
         val bucket = supabase.storage.from("twoshare")
-        bucket.upload(path, bytes) {
-            upsert = false
+        val paths = mutableListOf<String>()
+
+        prepared.forEach { photo ->
+            val path = "$uid/posts/${UUID.randomUUID()}.${photo.extension}"
+            bucket.upload(path, photo.bytes) {
+                upsert = false
+            }
+            paths += path
         }
 
         supabase.from("posts").insert(
-            PostInsert(userId = uid, imagePath = path)
+            PostInsert(
+                userId = uid,
+                imagePath = paths.first(),
+                imagePaths = paths
+            )
         )
     }
 
