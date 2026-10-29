@@ -343,6 +343,7 @@ class TwoShareRepository {
 
     suspend fun findIncomingCall(): CallRow? {
         val uid = currentUserId() ?: return null
+        val cutoff = Instant.now().minusSeconds(120)
         return supabase.from("calls")
             .select {
                 filter {
@@ -352,7 +353,10 @@ class TwoShareRepository {
                 order("created_at", Order.DESCENDING)
             }
             .decodeList<CallRow>()
-            .firstOrNull()
+            .firstOrNull { call ->
+                runCatching { Instant.parse(call.createdAt).isAfter(cutoff) }
+                    .getOrDefault(false)
+            }
     }
 
     suspend fun getCall(callId: String): CallRow? {
