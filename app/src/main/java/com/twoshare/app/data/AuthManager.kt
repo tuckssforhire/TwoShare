@@ -20,7 +20,7 @@ class AuthManager {
 
     private val allowedEmails = setOf(
         "eddierodwards@gmail.com",
-        "misamitchlailarene@gmail.com"
+        "urban.needs.ph@gmail.com"
     )
 
     suspend fun restoreTrustedSession(context: Context): Boolean {
@@ -59,9 +59,6 @@ class AuthManager {
             return PasswordSignInResult.TRUSTED_DEVICE
         }
 
-        // Password has already been verified. Sign out the first-factor session
-        // before sending the email code so the app remains locked until the new
-        // device verification is completed.
         supabase.auth.signOut()
         sendOtp(normalized)
         return PasswordSignInResult.EMAIL_CODE_REQUIRED
@@ -179,9 +176,6 @@ class AuthManager {
     private fun trustKey(userId: String) = "trusted_device_$userId"
 
     companion object {
-        // v2 deliberately ignores the incomplete v0.3.3 trust migration so
-        // both accounts perform one clean email verification when enabling
-        // password login for the first time.
         private const val PREFS_NAME = "twoshare_auth_v2"
     }
 }
