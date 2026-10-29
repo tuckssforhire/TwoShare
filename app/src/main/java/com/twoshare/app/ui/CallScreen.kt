@@ -2,6 +2,7 @@ package com.twoshare.app.ui
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -44,6 +45,9 @@ fun CallScreen(
         buildList {
             add(Manifest.permission.RECORD_AUDIO)
             if (initialCall.isVideo) add(Manifest.permission.CAMERA)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                add(Manifest.permission.BLUETOOTH_CONNECT)
+            }
         }
     }
 
@@ -97,11 +101,16 @@ fun CallScreen(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { results ->
         permissionRequested = true
-        hasPermissions = requiredPermissions.all { results[it] == true ||
-            ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
+        hasPermissions = requiredPermissions.all { permission ->
+            results[permission] == true ||
+                ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
         }
         if (!hasPermissions) {
-            error = "Microphone${if (initialCall.isVideo) " and camera" else ""} permission is required for this call."
+            error = if (initialCall.isVideo) {
+                "Microphone, camera and Nearby devices permission are required for calling."
+            } else {
+                "Microphone and Nearby devices permission are required for calling."
+            }
         }
     }
 
@@ -116,48 +125,58 @@ fun CallScreen(
         if (!hasPermissions) {
             onDispose { }
         } else {
-            val rtc = WebRtcCallManager(
-                context = context,
-                videoEnabledForCall = initialCall.isVideo,
-                localRenderer = localRenderer,
-                remoteRenderer = remoteRenderer,
-                onLocalSdpReady = { sdp ->
-                    scope.launch {
-                        runCatching {
-                            if (incoming) {
-                                repository.acceptCall(initialCall.id, sdp)
-                                callState = "Connecting…"
-                            } else {
-                                repository.setCallOffer(initialCall.id, sdp)
-                                callState = "Ringing…"
+            val rtcResult = runCatching {
+                WebRtcCallManager(
+                    context = context,
+                    videoEnabledForCall = initialCall.isVideo,
+                    localRenderer = localRenderer,
+                    remoteRenderer = remoteRenderer,
+                    onLocalSdpReady = { sdp ->
+                        scope.launch {
+                            runCatching {
+                                if (incoming) {
+                                    repository.acceptCall(initialCall.id, sdp)
+                                    callState = "Connecting…"
+                                } else {
+                                    repository.setCallOffer(initialCall.id, sdp)
+                                    callState = "Ringing…"
+                                }
+                            }.onFailure {
+                                error = "Unable to send call setup: ${it.localizedMessage ?: "unknown error"}"
                             }
-                        }.onFailure {
-                            error = "Unable to send call setup: ${it.localizedMessage ?: "unknown error"}"
                         }
-                    }
-                },
-                onLocalIceCandidate = { candidate ->
-                    scope.launch {
-                        runCatching {
-                            repository.publishIceCandidate(
-                                callId = initialCall.id,
-                                sdpMid = candidate.sdpMid,
-                                sdpMLineIndex = candidate.sdpMLineIndex,
-                                candidate = candidate.sdp
-                            )
-                        }.onFailure {
-                            error = "Unable to send network candidate: ${it.localizedMessage ?: "unknown error"}"
+                    },
+                    onLocalIceCandidate = { candidate ->
+                        scope.launch {
+                            runCatching {
+                                repository.publishIceCandidate(
+                                    callId = initialCall.id,
+                                    sdpMid = candidate.sdpMid,
+                                    sdpMLineIndex = candidate.sdpMLineIndex,
+                                    candidate = candidate.sdp
+                                )
+                            }.onFailure {
+                                error = "Unable to send network candidate: ${it.localizedMessage ?: "unknown error"}"
+                            }
                         }
-                    }
-                },
-                onConnectionState = { state -> callState = state },
-                onError = { message -> error = message }
-            )
-            manager = rtc
-            rtc.setSpeakerEnabled(speakerOn)
-            onDispose {
-                manager = null
-                rtc.dispose()
+                    },
+                    onConnectionState = { state -> callState = state },
+                    onError = { message -> error = message }
+                )
+            }
+
+            val rtc = rtcResult.getOrNull()
+            if (rtc == null) {
+                error = "Unable to initialize calling on this phone: ${rtcResult.exceptionOrNull()?.localizedMessage ?: "WebRTC startup failed"}"
+                callState = "Call unavailable"
+                onDispose { }
+            } else {
+                manager = rtc
+                rtc.setSpeakerEnabled(speakerOn)
+                onDispose {
+                    manager = null
+                    rtc.dispose()
+                }
             }
         }
     }
@@ -252,7 +271,7 @@ fun CallScreen(
             .fillMaxSize()
             .background(Color(0xFF11111B))
     ) {
-        if (initialCall.isVideo && hasPermissions) {
+        if (initialCall.isVideo && hasPermissions && manager != null) {
             AndroidView(
                 factory = { remoteRenderer },
                 modifier = Modifier.fillMaxSize()
@@ -295,7 +314,7 @@ fun CallScreen(
                 .align(Alignment.TopStart)
                 .padding(start = 12.dp, top = 24.dp)
         ) {
-            Text("‹ Back")
+            Text("← Back")
         }
 
         Column(
@@ -351,7 +370,7 @@ fun CallScreen(
                             muted = !muted
                             manager?.setMuted(muted)
                         },
-                        enabled = hasPermissions,
+                        enabled = hasPermissions && manager != null,
                         modifier = Modifier.weight(1f)
                     ) {
                         Text(if (muted) "Unmute" else "Mute")
@@ -362,7 +381,7 @@ fun CallScreen(
                             speakerOn = !speakerOn
                             manager?.setSpeakerEnabled(speakerOn)
                         },
-                        enabled = hasPermissions,
+                        enabled = hasPermissions && manager != null,
                         modifier = Modifier.weight(1f)
                     ) {
                         Text(if (speakerOn) "Speaker ✓" else "Speaker")
@@ -379,7 +398,7 @@ fun CallScreen(
                                 cameraOn = !cameraOn
                                 manager?.setVideoEnabled(cameraOn)
                             },
-                            enabled = hasPermissions,
+                            enabled = hasPermissions && manager != null,
                             modifier = Modifier.weight(1f)
                         ) {
                             Text(if (cameraOn) "Camera ✓" else "Camera")
@@ -387,7 +406,7 @@ fun CallScreen(
 
                         FilledTonalButton(
                             onClick = { manager?.switchCamera() },
-                            enabled = hasPermissions && cameraOn,
+                            enabled = hasPermissions && manager != null && cameraOn,
                             modifier = Modifier.weight(1f)
                         ) {
                             Text("Flip camera")
