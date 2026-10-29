@@ -20,9 +20,9 @@ class WebRtcCallManager(
     private val mainHandler = Handler(Looper.getMainLooper())
     private val audioManager = appContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     private val previousAudioMode = audioManager.mode
-    private val previousSpeakerphone = audioManager.isSpeakerphoneOn
+    private val previousSpeakerphone = runCatching { audioManager.isSpeakerphoneOn }.getOrDefault(false)
 
-    private val eglBase = EglBase.create()
+    private val eglBase: EglBase? = if (videoEnabledForCall) EglBase.create() else null
     private val factory: PeerConnectionFactory
     private val peerConnection: PeerConnection
 
@@ -39,27 +39,24 @@ class WebRtcCallManager(
     private var disposed = false
 
     init {
-        PeerConnectionFactory.initialize(
-            PeerConnectionFactory.InitializationOptions.builder(appContext)
-                .createInitializationOptions()
-        )
+        ensureFactoryInitialized(appContext)
 
-        localRenderer.init(eglBase.eglBaseContext, null)
-        localRenderer.setMirror(true)
-        remoteRenderer.init(eglBase.eglBaseContext, null)
-        remoteRenderer.setMirror(false)
+        val builder = PeerConnectionFactory.builder()
+        if (videoEnabledForCall) {
+            val eglContext = eglBase?.eglBaseContext
+                ?: error("Unable to initialize video rendering")
 
-        val encoderFactory = DefaultVideoEncoderFactory(
-            eglBase.eglBaseContext,
-            true,
-            true
-        )
-        val decoderFactory = DefaultVideoDecoderFactory(eglBase.eglBaseContext)
+            localRenderer.init(eglContext, null)
+            localRenderer.setMirror(true)
+            remoteRenderer.init(eglContext, null)
+            remoteRenderer.setMirror(false)
 
-        factory = PeerConnectionFactory.builder()
-            .setVideoEncoderFactory(encoderFactory)
-            .setVideoDecoderFactory(decoderFactory)
-            .createPeerConnectionFactory()
+            builder
+                .setVideoEncoderFactory(DefaultVideoEncoderFactory(eglContext, true, true))
+                .setVideoDecoderFactory(DefaultVideoDecoderFactory(eglContext))
+        }
+
+        factory = builder.createPeerConnectionFactory()
 
         val iceServers = listOf(
             PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer(),
@@ -74,7 +71,7 @@ class WebRtcCallManager(
             ?: error("Unable to create WebRTC peer connection")
 
         audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
-        audioManager.isSpeakerphoneOn = videoEnabledForCall
+        runCatching { audioManager.isSpeakerphoneOn = videoEnabledForCall }
 
         createLocalTracks()
     }
@@ -90,15 +87,18 @@ class WebRtcCallManager(
 
         val capturer = createCameraCapturer()
         if (capturer == null) {
-            postError("No camera is available on this device.")
+            postError("No compatible camera is available on this device.")
             return
         }
+
+        val eglContext = eglBase?.eglBaseContext
+            ?: error("Video rendering is not available")
 
         videoCapturer = capturer
         videoSource = factory.createVideoSource(false)
         surfaceTextureHelper = SurfaceTextureHelper.create(
             "TwoShareCaptureThread",
-            eglBase.eglBaseContext
+            eglContext
         )
         capturer.initialize(
             surfaceTextureHelper,
@@ -214,11 +214,13 @@ class WebRtcCallManager(
     }
 
     fun setSpeakerEnabled(enabled: Boolean) {
-        audioManager.isSpeakerphoneOn = enabled
+        runCatching { audioManager.isSpeakerphoneOn = enabled }
+            .onFailure { postError("Unable to change speaker routing.") }
     }
 
     fun switchCamera() {
-        videoCapturer?.switchCamera(null)
+        runCatching { videoCapturer?.switchCamera(null) }
+            .onFailure { postError("Unable to switch camera.") }
     }
 
     fun dispose() {
@@ -228,8 +230,10 @@ class WebRtcCallManager(
 
         runCatching { videoCapturer?.stopCapture() }
         runCatching { videoCapturer?.dispose() }
-        runCatching { videoTrack?.removeSink(localRenderer) }
-        runCatching { remoteVideoTrack?.removeSink(remoteRenderer) }
+        if (videoEnabledForCall) {
+            runCatching { videoTrack?.removeSink(localRenderer) }
+            runCatching { remoteVideoTrack?.removeSink(remoteRenderer) }
+        }
         runCatching { videoTrack?.dispose() }
         runCatching { audioTrack?.dispose() }
         runCatching { videoSource?.dispose() }
@@ -238,19 +242,28 @@ class WebRtcCallManager(
         runCatching { peerConnection.close() }
         runCatching { peerConnection.dispose() }
         runCatching { factory.dispose() }
-        runCatching { localRenderer.release() }
-        runCatching { remoteRenderer.release() }
-        runCatching { eglBase.release() }
+        if (videoEnabledForCall) {
+            runCatching { localRenderer.release() }
+            runCatching { remoteRenderer.release() }
+            runCatching { eglBase?.release() }
+        }
 
         audioManager.mode = previousAudioMode
-        audioManager.isSpeakerphoneOn = previousSpeakerphone
+        runCatching { audioManager.isSpeakerphoneOn = previousSpeakerphone }
     }
 
     private fun createCameraCapturer(): CameraVideoCapturer? {
-        val enumerator = Camera2Enumerator(appContext)
-        val names = enumerator.deviceNames
+        val enumerator: CameraEnumerator = if (Camera2Enumerator.isSupported(appContext)) {
+            Camera2Enumerator(appContext)
+        } else {
+            Camera1Enumerator(true)
+        }
 
+        val names = enumerator.deviceNames
         names.firstOrNull { enumerator.isFrontFacing(it) }?.let { name ->
+            enumerator.createCapturer(name, null)?.let { return it }
+        }
+        names.firstOrNull { enumerator.isBackFacing(it) }?.let { name ->
             enumerator.createCapturer(name, null)?.let { return it }
         }
         names.firstOrNull()?.let { name ->
@@ -260,6 +273,7 @@ class WebRtcCallManager(
     }
 
     private fun attachRemoteVideo(track: MediaStreamTrack?) {
+        if (!videoEnabledForCall) return
         val video = track as? VideoTrack ?: return
         if (remoteVideoTrack === video) return
         remoteVideoTrack?.removeSink(remoteRenderer)
@@ -328,5 +342,23 @@ class WebRtcCallManager(
         override fun onSetSuccess() = Unit
         override fun onCreateFailure(error: String) = Unit
         override fun onSetFailure(error: String) = Unit
+    }
+
+    companion object {
+        @Volatile
+        private var factoryInitialized = false
+        private val factoryInitLock = Any()
+
+        private fun ensureFactoryInitialized(context: Context) {
+            if (factoryInitialized) return
+            synchronized(factoryInitLock) {
+                if (factoryInitialized) return
+                PeerConnectionFactory.initialize(
+                    PeerConnectionFactory.InitializationOptions.builder(context)
+                        .createInitializationOptions()
+                )
+                factoryInitialized = true
+            }
+        }
     }
 }
