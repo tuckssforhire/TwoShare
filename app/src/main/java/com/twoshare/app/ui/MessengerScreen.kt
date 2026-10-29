@@ -3,6 +3,7 @@ package com.twoshare.app.ui
 import android.text.format.DateUtils
 import android.widget.MediaController
 import android.widget.VideoView
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
@@ -51,6 +52,8 @@ fun MessengerScreen(
     var sending by remember { mutableStateOf(false) }
     var startingCall by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+
+    BackHandler { onBack() }
 
     suspend fun refresh() {
         runCatching { repository.loadMessages() }
@@ -125,7 +128,7 @@ fun MessengerScreen(
                     }
                 },
                 navigationIcon = {
-                    TextButton(onClick = onBack) { Text("‹") }
+                    TextButton(onClick = onBack) { Text("← Back") }
                 },
                 actions = {
                     TextButton(onClick = { startCall(false) }, enabled = !startingCall) {
