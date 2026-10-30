@@ -46,6 +46,7 @@ fun FeedScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var posts by remember { mutableStateOf(emptyList<FeedPost>()) }
+    var unreadCount by remember { mutableIntStateOf(0) }
     var loading by remember { mutableStateOf(true) }
     var uploading by remember { mutableStateOf(false) }
     var uploadProgress by remember { mutableStateOf<String?>(null) }
@@ -55,20 +56,36 @@ fun FeedScreen(
     var viewerIndex by remember { mutableStateOf(0) }
     var showAccountSettings by remember { mutableStateOf(false) }
 
+    fun friendlyError(throwable: Throwable, fallback: String): String {
+        if (repository.isTransientNetworkError(throwable)) {
+            return "Connection changed. Reconnecting…"
+        }
+        val raw = throwable.localizedMessage.orEmpty()
+        return when {
+            raw.isBlank() -> fallback
+            "url=https://" in raw.lowercase() || raw.length > 220 -> fallback
+            else -> raw.lineSequence().firstOrNull()?.take(180) ?: fallback
+        }
+    }
+
     suspend fun refresh() {
         runCatching { repository.loadFeed() }
             .onSuccess {
                 posts = it
                 error = null
             }
-            .onFailure { error = it.localizedMessage ?: "Unable to load photos" }
+            .onFailure { error = friendlyError(it, "Unable to refresh photos.") }
+
+        runCatching { repository.unreadMessageCount() }
+            .onSuccess { unreadCount = it }
+
         loading = false
     }
 
     LaunchedEffect(Unit) {
         refresh()
         while (isActive) {
-            delay(5_000)
+            delay(3_000)
             refresh()
         }
     }
@@ -93,7 +110,7 @@ fun FeedScreen(
 
                 runCatching { repository.uploadPhotos(context, uris) }
                     .onSuccess { refresh() }
-                    .onFailure { error = it.localizedMessage ?: "Upload failed" }
+                    .onFailure { error = friendlyError(it, "Upload failed.") }
 
                 uploadProgress = null
                 uploading = false
@@ -118,8 +135,18 @@ fun FeedScreen(
                     }
                 },
                 actions = {
-                    TextButton(onClick = onOpenMessenger) {
-                        Text("Chat")
+                    BadgedBox(
+                        badge = {
+                            if (unreadCount > 0) {
+                                Badge {
+                                    Text(if (unreadCount > 99) "99+" else unreadCount.toString())
+                                }
+                            }
+                        }
+                    ) {
+                        TextButton(onClick = onOpenMessenger) {
+                            Text("Chat")
+                        }
                     }
                     IconButton(onClick = { showAccountSettings = true }) {
                         Icon(
@@ -167,7 +194,11 @@ fun FeedScreen(
                 Text(
                     text = it,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                    color = MaterialTheme.colorScheme.error
+                    color = if (it.startsWith("Connection changed")) {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    } else {
+                        MaterialTheme.colorScheme.error
+                    }
                 )
             }
 
@@ -195,7 +226,7 @@ fun FeedScreen(
                                 scope.launch {
                                     runCatching { repository.toggleLike(post) }
                                         .onSuccess { refresh() }
-                                        .onFailure { error = it.localizedMessage ?: "Like failed" }
+                                        .onFailure { error = friendlyError(it, "Like failed.") }
                                 }
                             },
                             onComments = { commentsPost = post }
