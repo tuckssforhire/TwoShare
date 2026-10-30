@@ -13,8 +13,8 @@ android {
         applicationId = "com.twoshare.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 23
-        versionName = "0.5.0"
+        versionCode = 24
+        versionName = "1.0.0"
     }
 
     signingConfigs {
@@ -28,6 +28,11 @@ android {
 
     buildTypes {
         getByName("debug") {
+            signingConfig = signingConfigs.getByName("debug")
+        }
+        getByName("release") {
+            isDebuggable = false
+            isMinifyEnabled = false
             signingConfig = signingConfigs.getByName("debug")
         }
     }
