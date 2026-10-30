@@ -80,9 +80,25 @@ fun MessengerScreen(
             .sortedBy { timelineEpochMillis(it.createdAt) }
     }
 
+    fun friendlyError(throwable: Throwable, fallback: String): String {
+        if (repository.isTransientNetworkError(throwable)) {
+            return "Connection changed. Reconnecting…"
+        }
+        val raw = throwable.localizedMessage.orEmpty()
+        return when {
+            raw.isBlank() -> fallback
+            "url=https://" in raw.lowercase() || raw.length > 220 -> fallback
+            else -> raw.lineSequence().firstOrNull()?.take(180) ?: fallback
+        }
+    }
+
     BackHandler { onBack() }
 
     suspend fun refresh() {
+        // Reading Messenger is the read receipt for this two-person chat. This operation is
+        // idempotent, so a transient network retry cannot create duplicate data.
+        runCatching { repository.markIncomingMessagesRead() }
+
         runCatching {
             val loadedMessages = repository.loadMessages()
             val loadedCalls = repository.loadCallHistory()
@@ -92,7 +108,7 @@ fun MessengerScreen(
             calls = loadedCalls
             error = null
         }.onFailure {
-            error = it.localizedMessage ?: "Unable to load Messenger"
+            error = friendlyError(it, "Unable to refresh Messenger.")
         }
         loading = false
     }
@@ -104,7 +120,7 @@ fun MessengerScreen(
             error = null
             runCatching { repository.createOutgoingCall(video) }
                 .onSuccess { call -> onStartCall(call, false) }
-                .onFailure { error = it.localizedMessage ?: "Unable to start TwoLink" }
+                .onFailure { error = friendlyError(it, "Unable to start TwoLink.") }
             startingCall = false
         }
     }
@@ -230,7 +246,7 @@ fun MessengerScreen(
                                         attachment = null
                                         refresh()
                                     }.onFailure {
-                                        error = it.localizedMessage ?: "Message failed"
+                                        error = friendlyError(it, "Message failed.")
                                     }
                                     sending = false
                                 }
@@ -259,7 +275,11 @@ fun MessengerScreen(
             error?.let {
                 Text(
                     text = it,
-                    color = MaterialTheme.colorScheme.error,
+                    color = if (it.startsWith("Connection changed")) {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    } else {
+                        MaterialTheme.colorScheme.error
+                    },
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
                 )
             }
@@ -298,7 +318,7 @@ fun MessengerScreen(
                                             }.onSuccess {
                                                 refresh()
                                             }.onFailure {
-                                                error = it.localizedMessage ?: "Reaction failed"
+                                                error = friendlyError(it, "Reaction failed.")
                                             }
                                         }
                                     }
