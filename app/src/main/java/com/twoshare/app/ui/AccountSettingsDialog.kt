@@ -21,6 +21,10 @@ fun AccountSettingsDialog(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
+    var displayName by remember { mutableStateOf("") }
+    var savedDisplayName by remember { mutableStateOf("") }
+    var profileLoading by remember { mutableStateOf(true) }
+
     var newPassword by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
     var verificationCode by remember { mutableStateOf("") }
@@ -31,6 +35,18 @@ fun AccountSettingsDialog(
     var message by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
 
+    LaunchedEffect(Unit) {
+        runCatching { authManager.currentProfile() }
+            .onSuccess {
+                displayName = it.displayName
+                savedDisplayName = it.displayName
+            }
+            .onFailure {
+                error = it.localizedMessage ?: "Unable to load profile."
+            }
+        profileLoading = false
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Account & security") },
@@ -39,9 +55,55 @@ fun AccountSettingsDialog(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
+                Text("Profile", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "This is the name your TwoShare partner sees on posts and messages.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+
+                OutlinedTextField(
+                    value = displayName,
+                    onValueChange = {
+                        if (it.length <= 60) displayName = it
+                        error = null
+                        message = null
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Display name") },
+                    supportingText = { Text("${displayName.length}/60") },
+                    singleLine = true,
+                    enabled = !profileLoading && !busy
+                )
+
+                Button(
+                    onClick = {
+                        scope.launch {
+                            busy = true
+                            error = null
+                            message = null
+                            runCatching { authManager.updateDisplayName(displayName) }
+                                .onSuccess {
+                                    displayName = it.displayName
+                                    savedDisplayName = it.displayName
+                                    message = "Display name updated."
+                                }
+                                .onFailure {
+                                    error = it.localizedMessage ?: "Unable to update display name."
+                                }
+                            busy = false
+                        }
+                    },
+                    enabled = !busy && !profileLoading && displayName.trim().isNotEmpty() && displayName.trim() != savedDisplayName,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Save display name")
+                }
+
+                HorizontalDivider(Modifier.padding(vertical = 4.dp))
+
                 Text("Change password", style = MaterialTheme.typography.titleMedium)
                 Text(
-                    "For security, TwoShare will verify your account by email before changing the password.",
+                    "TwoShare verifies your account by email before changing the password.",
                     style = MaterialTheme.typography.bodySmall
                 )
 
@@ -127,12 +189,17 @@ fun AccountSettingsDialog(
                                     confirmPassword = ""
                                     verificationCode = ""
                                     verificationSent = false
-                                    message = "Password changed successfully."
+                                    message = "Password changed successfully. You can now use it for normal password sign-in."
                                 }.onFailure {
                                     val raw = it.localizedMessage.orEmpty()
+                                    val lower = raw.lowercase()
                                     error = when {
-                                        "expired" in raw.lowercase() -> "The verification code expired. Send a new code and try again."
-                                        "invalid" in raw.lowercase() || "otp" in raw.lowercase() -> "The verification code is incorrect or expired."
+                                        "same password" in lower || "same_password" in lower || "different from the old password" in lower ->
+                                            "That is already your current password. Choose a different password, or keep it and use it to sign in normally."
+                                        "expired" in lower ->
+                                            "The verification code expired. Send a new code and try again."
+                                        "invalid" in lower || "otp" in lower || "reauthentication_not_valid" in lower ->
+                                            "The verification code is incorrect or expired."
                                         raw.isBlank() -> "Unable to change password."
                                         else -> raw.lineSequence().firstOrNull()?.take(180)
                                             ?: "Unable to change password."
