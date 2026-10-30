@@ -35,7 +35,9 @@ import com.twoshare.app.ui.FeedScreen
 import com.twoshare.app.ui.LoginScreen
 import com.twoshare.app.ui.MessengerScreen
 import com.twoshare.app.ui.theme.TwoShareTheme
+import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.handleDeeplinks
+import io.github.jan.supabase.auth.status.SessionStatus
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -80,6 +82,22 @@ class MainActivity : FragmentActivity() {
                     val remainingSplash = 700L - (System.currentTimeMillis() - startedAt)
                     if (remainingSplash > 0) delay(remainingSplash)
                     authChecked = true
+                }
+
+                // Keep Compose navigation in sync with the actual Supabase session. Previously the
+                // local signedIn flag could remain true after Auth had lost the session, leaving the
+                // feed visible while repository calls reported "Not signed in".
+                LaunchedEffect(Unit) {
+                    SupabaseProvider.client.auth.sessionStatus.collect { status ->
+                        if (!authChecked) return@collect
+                        if (status is SessionStatus.NotAuthenticated && signedIn && !biometricRequired) {
+                            showMessenger = false
+                            activeCall = null
+                            activeCallIncoming = false
+                            incomingCall = null
+                            signedIn = false
+                        }
+                    }
                 }
 
                 LaunchedEffect(authChecked, biometricRequired, biometricPromptVersion) {
