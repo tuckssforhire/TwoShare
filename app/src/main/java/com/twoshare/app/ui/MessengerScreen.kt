@@ -1,5 +1,7 @@
 package com.twoshare.app.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.text.format.DateUtils
 import android.widget.MediaController
 import android.widget.VideoView
@@ -25,6 +27,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.ContextCompat
 import coil.compose.AsyncImage
 import com.twoshare.app.R
 import com.twoshare.app.data.TwoShareRepository
@@ -72,6 +75,7 @@ fun MessengerScreen(
     var loading by remember { mutableStateOf(true) }
     var sending by remember { mutableStateOf(false) }
     var startingCall by remember { mutableStateOf(false) }
+    var pendingCallVideo by remember { mutableStateOf<Boolean?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
 
     val timeline = remember(messages, calls) {
@@ -92,11 +96,63 @@ fun MessengerScreen(
         }
     }
 
+    fun requiredCallPermissions(video: Boolean): List<String> = buildList {
+        add(Manifest.permission.RECORD_AUDIO)
+        if (video) add(Manifest.permission.CAMERA)
+    }
+
+    fun beginOutgoingCall(video: Boolean) {
+        if (startingCall) return
+        scope.launch {
+            startingCall = true
+            error = null
+            runCatching { repository.createOutgoingCall(video) }
+                .onSuccess { call -> onStartCall(call, false) }
+                .onFailure { error = friendlyError(it, "Unable to start TwoLink.") }
+            startingCall = false
+        }
+    }
+
+    val callPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { results ->
+        val video = pendingCallVideo
+        pendingCallVideo = null
+        if (video != null) {
+            val required = requiredCallPermissions(video)
+            val granted = required.all { permission ->
+                results[permission] == true ||
+                    ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
+            }
+            if (granted) {
+                beginOutgoingCall(video)
+            } else {
+                error = if (video) {
+                    "Allow microphone and camera access before starting a video TwoLink."
+                } else {
+                    "Allow microphone access before starting a voice TwoLink."
+                }
+            }
+        }
+    }
+
+    fun startCall(video: Boolean) {
+        if (startingCall || pendingCallVideo != null) return
+        val missing = requiredCallPermissions(video).filter { permission ->
+            ContextCompat.checkSelfPermission(context, permission) != PackageManager.PERMISSION_GRANTED
+        }
+        if (missing.isEmpty()) {
+            beginOutgoingCall(video)
+        } else {
+            error = null
+            pendingCallVideo = video
+            callPermissionLauncher.launch(missing.toTypedArray())
+        }
+    }
+
     BackHandler { onBack() }
 
     suspend fun refresh() {
-        // Reading Messenger is the read receipt for this two-person chat. This operation is
-        // idempotent, so a transient network retry cannot create duplicate data.
         runCatching { repository.markIncomingMessagesRead() }
 
         runCatching {
@@ -111,18 +167,6 @@ fun MessengerScreen(
             error = friendlyError(it, "Unable to refresh Messenger.")
         }
         loading = false
-    }
-
-    fun startCall(video: Boolean) {
-        if (startingCall) return
-        scope.launch {
-            startingCall = true
-            error = null
-            runCatching { repository.createOutgoingCall(video) }
-                .onSuccess { call -> onStartCall(call, false) }
-                .onFailure { error = friendlyError(it, "Unable to start TwoLink.") }
-            startingCall = false
-        }
     }
 
     LaunchedEffect(Unit) {
@@ -179,10 +223,10 @@ fun MessengerScreen(
                     TextButton(onClick = onBack) { Text("← Back") }
                 },
                 actions = {
-                    IconButton(onClick = { startCall(false) }, enabled = !startingCall) {
+                    IconButton(onClick = { startCall(false) }, enabled = !startingCall && pendingCallVideo == null) {
                         Icon(Icons.Default.Call, contentDescription = "Start voice TwoLink")
                     }
-                    IconButton(onClick = { startCall(true) }, enabled = !startingCall) {
+                    IconButton(onClick = { startCall(true) }, enabled = !startingCall && pendingCallVideo == null) {
                         Icon(Icons.Default.VideoCall, contentDescription = "Start video TwoLink")
                     }
                     TextButton(onClick = { scope.launch { refresh() } }) {
