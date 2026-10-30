@@ -2,13 +2,20 @@ package com.twoshare.app.call
 
 import android.content.Context
 import android.media.AudioManager
+import android.net.ConnectivityManager
+import android.net.Network
 import android.os.Handler
 import android.os.Looper
+import android.util.Base64
+import java.time.Instant
+import javax.crypto.Mac
+import javax.crypto.spec.SecretKeySpec
 import org.webrtc.*
 
 class WebRtcCallManager(
     context: Context,
     private val videoEnabledForCall: Boolean,
+    private val initiator: Boolean,
     private val localRenderer: SurfaceViewRenderer,
     private val remoteRenderer: SurfaceViewRenderer,
     private val onLocalSdpReady: (String) -> Unit,
@@ -19,6 +26,7 @@ class WebRtcCallManager(
     private val appContext = context.applicationContext
     private val mainHandler = Handler(Looper.getMainLooper())
     private val audioManager = appContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+    private val connectivityManager = appContext.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
     private val previousAudioMode = audioManager.mode
     private val previousSpeakerphone = runCatching { audioManager.isSpeakerphoneOn }.getOrDefault(false)
 
@@ -36,6 +44,10 @@ class WebRtcCallManager(
     private var localSdpDispatched = false
     private var remoteDescriptionReady = false
     private val pendingRemoteCandidates = mutableListOf<IceCandidate>()
+    private var activeNetwork: Network? = null
+    private var restartAttempts = 0
+    private var restartScheduled = false
+    private var lastRestartAt = 0L
     @Volatile private var disposed = false
 
     private val cameraEventsHandler = object : CameraVideoCapturer.CameraEventsHandler {
@@ -54,6 +66,22 @@ class WebRtcCallManager(
         override fun onCameraOpening(cameraName: String) = Unit
         override fun onFirstFrameAvailable() = Unit
         override fun onCameraClosed() = Unit
+    }
+
+    private val networkCallback = object : ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: Network) {
+            val previous = activeNetwork
+            activeNetwork = network
+            if (previous != null && previous != network && initiator) {
+                requestIceRestart(delayMs = 500L)
+            }
+        }
+
+        override fun onLost(network: Network) {
+            if (activeNetwork == network) {
+                activeNetwork = null
+            }
+        }
     }
 
     init {
@@ -78,17 +106,18 @@ class WebRtcCallManager(
 
         factory = builder.createPeerConnectionFactory()
 
-        val iceServers = listOf(
-            PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer(),
-            PeerConnection.IceServer.builder("stun:stun1.l.google.com:19302").createIceServer()
-        )
-        val rtcConfig = PeerConnection.RTCConfiguration(iceServers).apply {
+        val rtcConfig = PeerConnection.RTCConfiguration(buildIceServers()).apply {
             sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
             continualGatheringPolicy = PeerConnection.ContinualGatheringPolicy.GATHER_CONTINUALLY
+            tcpCandidatePolicy = PeerConnection.TcpCandidatePolicy.ENABLED
+            iceTransportsType = PeerConnection.IceTransportsType.ALL
         }
 
         peerConnection = factory.createPeerConnection(rtcConfig, createPeerObserver())
             ?: error("Unable to create WebRTC peer connection")
+
+        activeNetwork = connectivityManager.activeNetwork
+        runCatching { connectivityManager.registerDefaultNetworkCallback(networkCallback) }
 
         audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
         runCatching { audioManager.isSpeakerphoneOn = videoEnabledForCall }
@@ -126,8 +155,6 @@ class WebRtcCallManager(
             videoSource!!.capturerObserver
         )
 
-        // Camera1 is intentionally preferred below for stability across vendors. A modest
-        // capture size also reduces pressure on the camera/encoder during repeated calls.
         try {
             capturer.startCapture(480, 360, 20)
         } catch (t: Throwable) {
@@ -145,6 +172,11 @@ class WebRtcCallManager(
         if (disposed) return
         localSdpDispatched = false
         postState("Creating TwoLink…")
+        createOffer()
+    }
+
+    private fun createOffer() {
+        if (disposed) return
         peerConnection.createOffer(object : SimpleSdpObserver() {
             override fun onCreateSuccess(description: SessionDescription) {
                 setLocalDescription(description)
@@ -159,7 +191,7 @@ class WebRtcCallManager(
     fun startCallee(offerSdp: String) {
         if (disposed) return
         localSdpDispatched = false
-        postState("Answering…")
+        postState(if (remoteDescriptionReady) "Reconnecting through relay…" else "Answering…")
         peerConnection.setRemoteDescription(object : SimpleSdpObserver() {
             override fun onSetSuccess() {
                 if (disposed) return
@@ -239,6 +271,37 @@ class WebRtcCallManager(
         pendingRemoteCandidates.clear()
     }
 
+    private fun requestIceRestart(delayMs: Long = 900L) {
+        if (disposed || !initiator || restartScheduled) return
+        val now = System.currentTimeMillis()
+        if (now - lastRestartAt < 2_500L) return
+
+        if (restartAttempts >= 3) {
+            postError("Unable to reconnect on this network. End TwoLink and call again.")
+            return
+        }
+
+        restartScheduled = true
+        postState("Reconnecting through relay…")
+        mainHandler.postDelayed({
+            if (disposed) return@postDelayed
+            restartScheduled = false
+            restartAttempts += 1
+            lastRestartAt = System.currentTimeMillis()
+            localSdpDispatched = false
+
+            runCatching { peerConnection.restartIce() }
+                .onSuccess { createOffer() }
+                .onFailure {
+                    if (restartAttempts >= 3) {
+                        postError("Unable to restart the connection. End TwoLink and call again.")
+                    } else {
+                        requestIceRestart(1_200L)
+                    }
+                }
+        }, delayMs)
+    }
+
     fun setMuted(muted: Boolean) {
         if (!disposed) audioTrack?.setEnabled(!muted)
     }
@@ -272,9 +335,8 @@ class WebRtcCallManager(
         if (disposed) return
         disposed = true
         mainHandler.removeCallbacksAndMessages(null)
+        runCatching { connectivityManager.unregisterNetworkCallback(networkCallback) }
 
-        // Stop the camera first and wait for its capture thread to finish before releasing
-        // sources, renderers and EGL. This avoids use-after-release crashes on repeated calls.
         try {
             videoCapturer?.stopCapture()
         } catch (_: InterruptedException) {
@@ -316,8 +378,6 @@ class WebRtcCallManager(
     }
 
     private fun createCameraCapturer(): CameraVideoCapturer? {
-        // Camera1 is deliberately preferred. Some devices report Camera2 support but can still
-        // fail or crash during repeated WebRTC open/close cycles. Camera2 remains a fallback.
         createFromEnumerator(Camera1Enumerator(true))?.let { return it }
 
         if (Camera2Enumerator.isSupported(appContext)) {
@@ -360,10 +420,18 @@ class WebRtcCallManager(
             if (disposed) return
             when (newState) {
                 PeerConnection.IceConnectionState.CONNECTED,
-                PeerConnection.IceConnectionState.COMPLETED -> postState("Connected")
+                PeerConnection.IceConnectionState.COMPLETED -> {
+                    restartAttempts = 0
+                    postState("Connected")
+                }
                 PeerConnection.IceConnectionState.CHECKING -> postState("Connecting…")
-                PeerConnection.IceConnectionState.FAILED -> postError("TwoLink connection failed. A TURN relay may be required on this network.")
-                PeerConnection.IceConnectionState.DISCONNECTED -> postState("Reconnecting…")
+                PeerConnection.IceConnectionState.FAILED -> {
+                    if (initiator) requestIceRestart() else postState("Waiting for reconnection…")
+                }
+                PeerConnection.IceConnectionState.DISCONNECTED -> {
+                    postState("Reconnecting…")
+                    if (initiator) requestIceRestart(1_500L)
+                }
                 else -> Unit
             }
         }
@@ -371,10 +439,18 @@ class WebRtcCallManager(
         override fun onConnectionChange(newState: PeerConnection.PeerConnectionState) {
             if (disposed) return
             when (newState) {
-                PeerConnection.PeerConnectionState.CONNECTED -> postState("Connected")
+                PeerConnection.PeerConnectionState.CONNECTED -> {
+                    restartAttempts = 0
+                    postState("Connected")
+                }
                 PeerConnection.PeerConnectionState.CONNECTING -> postState("Connecting…")
-                PeerConnection.PeerConnectionState.FAILED -> postError("TwoLink connection failed. A TURN relay may be required on this network.")
-                PeerConnection.PeerConnectionState.DISCONNECTED -> postState("Reconnecting…")
+                PeerConnection.PeerConnectionState.FAILED -> {
+                    if (initiator) requestIceRestart() else postState("Waiting for reconnection…")
+                }
+                PeerConnection.PeerConnectionState.DISCONNECTED -> {
+                    postState("Reconnecting…")
+                    if (initiator) requestIceRestart(1_500L)
+                }
                 else -> Unit
             }
         }
@@ -433,6 +509,33 @@ class WebRtcCallManager(
                 )
                 factoryInitialized = true
             }
+        }
+
+        private fun buildIceServers(): List<PeerConnection.IceServer> {
+            val expiresAt = Instant.now().epochSecond + (12 * 60 * 60)
+            val username = "$expiresAt:twoshare"
+            val secret = "openrelayprojectsecret"
+            val mac = Mac.getInstance("HmacSHA1")
+            mac.init(SecretKeySpec(secret.toByteArray(Charsets.UTF_8), "HmacSHA1"))
+            val password = Base64.encodeToString(
+                mac.doFinal(username.toByteArray(Charsets.UTF_8)),
+                Base64.NO_WRAP
+            )
+
+            fun relay(url: String) = PeerConnection.IceServer.builder(url)
+                .setUsername(username)
+                .setPassword(password)
+                .createIceServer()
+
+            return listOf(
+                PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer(),
+                PeerConnection.IceServer.builder("stun:stun1.l.google.com:19302").createIceServer(),
+                PeerConnection.IceServer.builder("stun:stun.cloudflare.com:3478").createIceServer(),
+                relay("turn:staticauth.openrelay.metered.ca:80"),
+                relay("turn:staticauth.openrelay.metered.ca:443"),
+                relay("turn:staticauth.openrelay.metered.ca:443?transport=tcp"),
+                relay("turns:staticauth.openrelay.metered.ca:443?transport=tcp")
+            )
         }
     }
 }
