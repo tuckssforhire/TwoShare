@@ -47,11 +47,13 @@ suspend fun TwoShareRepository.publishIceCandidate(
 suspend fun TwoShareRepository.loadRemoteIceCandidates(callId: String): List<CallIceCandidateRow> {
     val uid = currentUserId() ?: return emptyList()
     requireAllowedUser()
-    return SupabaseProvider.client.from("call_ice_candidates")
-        .select {
-            filter { eq("call_id", callId) }
-            order("created_at", Order.ASCENDING)
-        }
-        .decodeList<CallIceCandidateRow>()
-        .filter { it.userId != uid }
+    return retryNetworkRead {
+        SupabaseProvider.client.from("call_ice_candidates")
+            .select {
+                filter { eq("call_id", callId) }
+                order("created_at", Order.ASCENDING)
+            }
+            .decodeList<CallIceCandidateRow>()
+            .filter { it.userId != uid }
+    }
 }
