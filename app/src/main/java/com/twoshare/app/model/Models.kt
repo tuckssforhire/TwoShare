@@ -62,7 +62,8 @@ data class MessageRow(
     @SerialName("media_path") val mediaPath: String? = null,
     @SerialName("media_type") val mediaType: String? = null,
     @SerialName("media_mime") val mediaMime: String? = null,
-    @SerialName("created_at") val createdAt: String
+    @SerialName("created_at") val createdAt: String,
+    @SerialName("read_at") val readAt: String? = null
 )
 
 @Serializable
@@ -138,5 +139,6 @@ data class UiChatMessage(
     val mediaType: String?,
     val mediaUrl: String?,
     val createdAt: String,
+    val readAt: String?,
     val reactions: Map<String, Set<String>>
 )
