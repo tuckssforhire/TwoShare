@@ -83,28 +83,25 @@ class AuthManager {
     }
 
     suspend fun startPasswordChangeVerification() {
-        val email = currentEmail()
-            ?: error("You must be signed in to change your password.")
-        sendOtp(normalizeEmail(email))
+        require(currentUserId() != null) { "You must be signed in to change your password." }
+        // Supabase's dedicated reauthentication flow sends a nonce to the signed-in user's
+        // confirmed email without replacing the current app session with a new OTP sign-in flow.
+        supabase.auth.reauthenticate()
     }
 
     suspend fun verifyAndChangePassword(code: String, newPassword: String) {
-        val email = currentEmail()
-            ?: error("You must be signed in to change your password.")
+        require(currentUserId() != null) { "You must be signed in to change your password." }
         require(newPassword.length >= 8) { "New password must be at least 8 characters." }
         val cleanedCode = code.trim()
         require(cleanedCode.isNotEmpty()) { "Enter the verification code from your email." }
 
-        supabase.auth.verifyEmailOtp(
-            type = OtpType.Email.EMAIL,
-            email = normalizeEmail(email),
-            token = cleanedCode
-        )
-        requireAllowedUser()
-
+        // The code from reauthenticate() is a nonce for updateUser(), not a normal sign-in OTP.
+        // Keeping it in the update request preserves the current session while proving email access.
         supabase.auth.updateUser {
             password = newPassword
+            nonce = cleanedCode
         }
+        requireAllowedUser()
     }
 
     fun currentEmail(): String? = supabase.auth.currentUserOrNull()?.email
