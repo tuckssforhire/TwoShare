@@ -47,7 +47,7 @@ jobs:
             exit 1
           fi
 
-          EXPECTED_SHA256="D8F4346D34BD51A40EC72D026DBE607BF36FDD7EE1EFE1DD54411B5D39647EB2"
+          EXPECTED_SHA256="F68AE9FE634515DB4143F64595CA6EB70B68CEC73A5615C7942C5D4CF65E6688"
           ACTUAL_SHA256="$(keytool -list -v \
             -keystore "$HOME/.android/debug.keystore" \
             -storepass android \
