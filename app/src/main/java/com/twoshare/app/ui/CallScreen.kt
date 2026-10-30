@@ -9,11 +9,21 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CallEnd
+import androidx.compose.material.icons.filled.Cameraswitch
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.MicOff
+import androidx.compose.material.icons.filled.Videocam
+import androidx.compose.material.icons.filled.VideocamOff
+import androidx.compose.material.icons.filled.VolumeDown
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -393,81 +403,100 @@ fun CallScreen(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth(),
-            color = Color(0xCC11111B)
+            color = Color(0x8811111B)
         ) {
-            Column(
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 18.dp, vertical = 18.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceEvenly
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    FilledTonalButton(
-                        onClick = {
-                            muted = !muted
-                            manager?.setMuted(muted)
-                        },
-                        enabled = hasPermissions && manager != null,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text(if (muted) "Unmute" else "Mute")
+                CompactCallControl(
+                    icon = if (muted) Icons.Default.MicOff else Icons.Default.Mic,
+                    contentDescription = if (muted) "Unmute microphone" else "Mute microphone",
+                    enabled = hasPermissions && manager != null,
+                    onClick = {
+                        muted = !muted
+                        manager?.setMuted(muted)
                     }
+                )
 
-                    FilledTonalButton(
-                        onClick = {
-                            speakerOn = !speakerOn
-                            manager?.setSpeakerEnabled(speakerOn)
-                        },
-                        enabled = hasPermissions && manager != null,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text(if (speakerOn) "Speaker ✓" else "Speaker")
+                CompactCallControl(
+                    icon = if (speakerOn) Icons.Default.VolumeUp else Icons.Default.VolumeDown,
+                    contentDescription = if (speakerOn) "Use earpiece" else "Use speaker",
+                    enabled = hasPermissions && manager != null,
+                    onClick = {
+                        speakerOn = !speakerOn
+                        manager?.setSpeakerEnabled(speakerOn)
                     }
-                }
+                )
 
                 if (initialCall.isVideo) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        FilledTonalButton(
-                            onClick = {
-                                cameraOn = !cameraOn
-                                manager?.setVideoEnabled(cameraOn)
-                            },
-                            enabled = hasPermissions && manager != null,
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text(if (cameraOn) "Camera ✓" else "Camera")
+                    CompactCallControl(
+                        icon = if (cameraOn) Icons.Default.Videocam else Icons.Default.VideocamOff,
+                        contentDescription = if (cameraOn) "Turn camera off" else "Turn camera on",
+                        enabled = hasPermissions && manager != null,
+                        onClick = {
+                            cameraOn = !cameraOn
+                            manager?.setVideoEnabled(cameraOn)
                         }
-
-                        FilledTonalButton(
-                            onClick = { manager?.switchCamera() },
-                            enabled = hasPermissions && manager != null && cameraOn,
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text("Flip camera")
-                        }
-                    }
-                }
-
-                Button(
-                    onClick = { endAndFinish() },
-                    enabled = !endingCall,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(54.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error
                     )
-                ) {
-                    Text(if (endingCall) "Ending…" else "End Call")
+
+                    CompactCallControl(
+                        icon = Icons.Default.Cameraswitch,
+                        contentDescription = "Flip camera",
+                        enabled = hasPermissions && manager != null && cameraOn,
+                        onClick = { manager?.switchCamera() }
+                    )
                 }
+
+                CompactCallControl(
+                    icon = Icons.Default.CallEnd,
+                    contentDescription = "End call",
+                    enabled = !endingCall,
+                    destructive = true,
+                    larger = true,
+                    onClick = { endAndFinish() }
+                )
             }
+        }
+    }
+}
+
+@Composable
+private fun CompactCallControl(
+    icon: ImageVector,
+    contentDescription: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    destructive: Boolean = false,
+    larger: Boolean = false
+) {
+    val size = if (larger) 60.dp else 52.dp
+    val backgroundColor = if (destructive) {
+        MaterialTheme.colorScheme.error
+    } else {
+        Color(0xCC2D2D38)
+    }
+
+    Surface(
+        modifier = Modifier.size(size),
+        shape = CircleShape,
+        color = backgroundColor,
+        tonalElevation = if (destructive) 0.dp else 2.dp
+    ) {
+        IconButton(
+            onClick = onClick,
+            enabled = enabled,
+            modifier = Modifier.fillMaxSize()
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = contentDescription,
+                tint = if (enabled) Color.White else Color.White.copy(alpha = 0.35f),
+                modifier = Modifier.size(if (larger) 30.dp else 26.dp)
+            )
         }
     }
 }
