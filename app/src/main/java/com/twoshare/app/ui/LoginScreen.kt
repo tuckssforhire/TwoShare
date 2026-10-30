@@ -29,6 +29,28 @@ fun LoginScreen(authManager: AuthManager, onSignedIn: () -> Unit) {
     var error by remember { mutableStateOf<String?>(null) }
     var info by remember { mutableStateOf<String?>(null) }
 
+    error?.let { message ->
+        AlertDialog(
+            onDismissRequest = { error = null },
+            title = { Text("Unable to continue") },
+            text = { Text(message) },
+            confirmButton = {
+                Button(onClick = { error = null }) { Text("OK") }
+            }
+        )
+    }
+
+    info?.let { message ->
+        AlertDialog(
+            onDismissRequest = { info = null },
+            title = { Text(if (verifyingEmail) "Check your email" else "TwoShare") },
+            text = { Text(message) },
+            confirmButton = {
+                Button(onClick = { info = null }) { Text("OK") }
+            }
+        )
+    }
+
     Surface(modifier = Modifier.fillMaxSize()) {
         Box(modifier = Modifier.fillMaxSize().padding(28.dp), contentAlignment = Alignment.Center) {
             Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -41,7 +63,7 @@ fun LoginScreen(authManager: AuthManager, onSignedIn: () -> Unit) {
 
                 OutlinedTextField(
                     value = email,
-                    onValueChange = { email = it; error = null },
+                    onValueChange = { email = it },
                     modifier = Modifier.fillMaxWidth(), label = { Text("Email") }, singleLine = true,
                     enabled = !verifyingEmail && !loading,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email)
@@ -50,7 +72,7 @@ fun LoginScreen(authManager: AuthManager, onSignedIn: () -> Unit) {
                 if (!verifyingEmail) {
                     Spacer(Modifier.height(12.dp))
                     OutlinedTextField(
-                        value = password, onValueChange = { password = it; error = null },
+                        value = password, onValueChange = { password = it },
                         modifier = Modifier.fillMaxWidth(), label = { Text("Password") }, singleLine = true,
                         enabled = !loading, visualTransformation = PasswordVisualTransformation(),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
@@ -58,14 +80,12 @@ fun LoginScreen(authManager: AuthManager, onSignedIn: () -> Unit) {
                 } else {
                     Spacer(Modifier.height(12.dp))
                     OutlinedTextField(
-                        value = code, onValueChange = { code = it.filter(Char::isDigit).take(8); error = null },
+                        value = code, onValueChange = { code = it.filter(Char::isDigit).take(8) },
                         modifier = Modifier.fillMaxWidth(), label = { Text("Email verification code") }, singleLine = true,
                         enabled = !loading, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword)
                     )
                 }
 
-                info?.let { Spacer(Modifier.height(12.dp)); Text(it, style = MaterialTheme.typography.bodySmall) }
-                error?.let { Spacer(Modifier.height(12.dp)); Text(it, color = MaterialTheme.colorScheme.error) }
                 Spacer(Modifier.height(20.dp))
 
                 if (!verifyingEmail) {
