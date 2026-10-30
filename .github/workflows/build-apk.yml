@@ -39,14 +39,29 @@ jobs:
           path: ~/.android/debug.keystore
           key: twoshare-debug-keystore-v1
 
-      - name: Require persistent signing key
+      - name: Require exact TwoShare signing certificate
         shell: bash
         run: |
           if [ ! -f "$HOME/.android/debug.keystore" ]; then
             echo "::error::TwoShare signing keystore is missing. Refusing to generate a different certificate because that would break APK updates."
             exit 1
           fi
-          keytool -list -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey >/dev/null
+
+          EXPECTED_SHA256="D8F4346D34BD51A40EC72D026DBE607BF36FDD7EE1EFE1DD54411B5D39647EB2"
+          ACTUAL_SHA256="$(keytool -list -v \
+            -keystore "$HOME/.android/debug.keystore" \
+            -storepass android \
+            -alias androiddebugkey 2>/dev/null \
+            | sed -n 's/^[[:space:]]*SHA256: //p' \
+            | head -n 1 \
+            | tr -d ':')"
+
+          if [ "$ACTUAL_SHA256" != "$EXPECTED_SHA256" ]; then
+            echo "::error::TwoShare signing certificate mismatch. Expected $EXPECTED_SHA256 but restored $ACTUAL_SHA256. Refusing to build an APK that cannot update the permanent-signing installation."
+            exit 1
+          fi
+
+          echo "Verified permanent TwoShare signing certificate: $ACTUAL_SHA256"
 
       - name: Build debug APK
         env:
