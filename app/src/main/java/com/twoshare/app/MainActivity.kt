@@ -1,8 +1,8 @@
 package com.twoshare.app
 
 import android.os.Bundle
-import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
+import androidx.biometric.BiometricManager
+import androidx.biometric.BiometricPrompt
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -10,9 +10,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
@@ -20,6 +23,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import androidx.fragment.app.FragmentActivity
 import com.twoshare.app.data.AuthManager
 import com.twoshare.app.data.SupabaseProvider
 import com.twoshare.app.data.TwoShareRepository
@@ -34,7 +39,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -48,6 +53,9 @@ class MainActivity : ComponentActivity() {
 
                 var authChecked by remember { mutableStateOf(false) }
                 var signedIn by remember { mutableStateOf(false) }
+                var biometricRequired by remember { mutableStateOf(false) }
+                var biometricError by remember { mutableStateOf<String?>(null) }
+                var biometricPromptVersion by remember { mutableIntStateOf(0) }
                 var showMessenger by remember { mutableStateOf(false) }
                 var activeCall by remember { mutableStateOf<CallRow?>(null) }
                 var activeCallIncoming by remember { mutableStateOf(false) }
@@ -56,10 +64,35 @@ class MainActivity : ComponentActivity() {
                 LaunchedEffect(Unit) {
                     val startedAt = System.currentTimeMillis()
                     val restored = authManager.restoreTrustedSession(this@MainActivity)
+
+                    if (restored && authManager.isBiometricEnabled(this@MainActivity)) {
+                        if (authManager.canUseBiometrics(this@MainActivity)) {
+                            biometricRequired = true
+                        } else {
+                            runCatching { repository.signOut() }
+                            signedIn = false
+                        }
+                    } else {
+                        signedIn = restored
+                    }
+
                     val remainingSplash = 700L - (System.currentTimeMillis() - startedAt)
                     if (remainingSplash > 0) delay(remainingSplash)
-                    signedIn = restored
                     authChecked = true
+                }
+
+                LaunchedEffect(authChecked, biometricRequired, biometricPromptVersion) {
+                    if (!authChecked || !biometricRequired) return@LaunchedEffect
+                    requestBiometricUnlock(
+                        onSuccess = {
+                            biometricError = null
+                            biometricRequired = false
+                            signedIn = true
+                        },
+                        onError = { message ->
+                            biometricError = message
+                        }
+                    )
                 }
 
                 LaunchedEffect(signedIn, activeCall) {
@@ -76,49 +109,70 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                if (!authChecked) {
-                    TwoShareStartupScreen()
-                } else if (signedIn) {
-                    val call = activeCall
-                    if (call != null) {
-                        CallScreen(
-                            repository = repository,
-                            initialCall = call,
-                            incoming = activeCallIncoming,
-                            onFinished = {
-                                activeCall = null
-                                activeCallIncoming = false
-                            }
-                        )
-                    } else if (showMessenger) {
-                        MessengerScreen(
-                            repository = repository,
-                            onBack = { showMessenger = false },
-                            onStartCall = { startedCall, incoming ->
-                                incomingCall = null
-                                activeCallIncoming = incoming
-                                activeCall = startedCall
-                            }
-                        )
-                    } else {
-                        FeedScreen(
-                            repository = repository,
-                            onOpenMessenger = { showMessenger = true },
-                            onSignedOut = {
-                                showMessenger = false
-                                activeCall = null
-                                incomingCall = null
+                when {
+                    !authChecked -> TwoShareStartupScreen()
+
+                    biometricRequired -> BiometricUnlockScreen(
+                        error = biometricError,
+                        onUnlock = {
+                            biometricError = null
+                            biometricPromptVersion++
+                        },
+                        onUseAccountLogin = {
+                            scope.launch {
+                                runCatching { repository.signOut() }
+                                biometricRequired = false
+                                biometricError = null
                                 signedIn = false
                             }
-                        )
+                        }
+                    )
+
+                    signedIn -> {
+                        val call = activeCall
+                        if (call != null) {
+                            CallScreen(
+                                repository = repository,
+                                initialCall = call,
+                                incoming = activeCallIncoming,
+                                onFinished = {
+                                    activeCall = null
+                                    activeCallIncoming = false
+                                }
+                            )
+                        } else if (showMessenger) {
+                            MessengerScreen(
+                                repository = repository,
+                                onBack = { showMessenger = false },
+                                onStartCall = { startedCall, incoming ->
+                                    incomingCall = null
+                                    activeCallIncoming = incoming
+                                    activeCall = startedCall
+                                }
+                            )
+                        } else {
+                            FeedScreen(
+                                repository = repository,
+                                authManager = authManager,
+                                onOpenMessenger = { showMessenger = true },
+                                onSignedOut = {
+                                    showMessenger = false
+                                    activeCall = null
+                                    incomingCall = null
+                                    biometricRequired = false
+                                    signedIn = false
+                                }
+                            )
+                        }
                     }
-                } else {
-                    LoginScreen(
+
+                    else -> LoginScreen(
                         authManager = authManager,
                         onSignedIn = {
                             showMessenger = false
                             activeCall = null
                             incomingCall = null
+                            biometricRequired = false
                             signedIn = true
                         }
                     )
@@ -128,10 +182,16 @@ class MainActivity : ComponentActivity() {
                 if (authChecked && signedIn && activeCall == null && ringing != null) {
                     AlertDialog(
                         onDismissRequest = { },
-                        title = {
-                            Text(if (ringing.isVideo) "Incoming video call" else "Incoming voice call")
+                        title = { Text("Incoming TwoLink") },
+                        text = {
+                            Text(
+                                if (ringing.isVideo) {
+                                    "Your TwoShare partner is starting a video TwoLink."
+                                } else {
+                                    "Your TwoShare partner is starting a voice TwoLink."
+                                }
+                            )
                         },
-                        text = { Text("Your TwoShare partner is calling.") },
                         confirmButton = {
                             TextButton(onClick = {
                                 incomingCall = null
@@ -153,6 +213,90 @@ class MainActivity : ComponentActivity() {
                         }
                     )
                 }
+            }
+        }
+    }
+
+    private fun requestBiometricUnlock(
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit
+    ) {
+        val executor = ContextCompat.getMainExecutor(this)
+        val prompt = BiometricPrompt(
+            this,
+            executor,
+            object : BiometricPrompt.AuthenticationCallback() {
+                override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                    super.onAuthenticationSucceeded(result)
+                    onSuccess()
+                }
+
+                override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                    super.onAuthenticationError(errorCode, errString)
+                    onError(
+                        when (errorCode) {
+                            BiometricPrompt.ERROR_NEGATIVE_BUTTON,
+                            BiometricPrompt.ERROR_USER_CANCELED,
+                            BiometricPrompt.ERROR_CANCELED -> "Biometric unlock cancelled."
+                            else -> errString.toString().ifBlank { "Biometric unlock failed." }
+                        }
+                    )
+                }
+
+                override fun onAuthenticationFailed() {
+                    super.onAuthenticationFailed()
+                    onError("Fingerprint or face not recognized. Try again.")
+                }
+            }
+        )
+
+        val promptInfo = BiometricPrompt.PromptInfo.Builder()
+            .setTitle("Unlock TwoShare")
+            .setSubtitle("Use your fingerprint or face")
+            .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_WEAK)
+            .setNegativeButtonText("Use account login")
+            .build()
+
+        prompt.authenticate(promptInfo)
+    }
+}
+
+@Composable
+private fun BiometricUnlockScreen(
+    error: String?,
+    onUnlock: () -> Unit,
+    onUseAccountLogin: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(28.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Image(
+                painter = painterResource(R.drawable.twoshare_icon),
+                contentDescription = "TwoShare logo",
+                modifier = Modifier.size(120.dp)
+            )
+            Spacer(Modifier.height(18.dp))
+            Text("TwoShare locked", style = MaterialTheme.typography.headlineSmall)
+            Spacer(Modifier.height(6.dp))
+            Text("Unlock this trusted phone with fingerprint or face.")
+            error?.let {
+                Spacer(Modifier.height(12.dp))
+                Text(it, color = MaterialTheme.colorScheme.error)
+            }
+            Spacer(Modifier.height(20.dp))
+            Button(onClick = onUnlock) {
+                Text("Unlock with biometrics")
+            }
+            Spacer(Modifier.height(8.dp))
+            OutlinedButton(onClick = onUseAccountLogin) {
+                Text("Use account login")
             }
         }
     }
