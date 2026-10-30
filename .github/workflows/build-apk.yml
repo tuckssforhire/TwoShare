@@ -47,6 +47,7 @@ jobs:
             exit 1
           fi
 
+          # Permanent TwoShare debug certificate. Do not replace this value.
           EXPECTED_SHA256="F68AE9FE634515DB4143F64595CA6EB70B68CEC73A5615C7942C5D4CF65E6688"
           ACTUAL_SHA256="$(keytool -list -v \
             -keystore "$HOME/.android/debug.keystore" \
