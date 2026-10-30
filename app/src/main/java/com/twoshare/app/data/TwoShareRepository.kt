@@ -19,7 +19,7 @@ import kotlin.time.Duration.Companion.hours
 class TwoShareRepository {
     private val supabase = SupabaseProvider.client
     private val signedUrlCache = mutableMapOf<String, String>()
-    private val allowedEmails = setOf("eddierodwards@gmail.com", "urban.needs.ph@gmail.com")
+    private val allowedEmails = setOf("eddierodwards@gmail.com", "misamitchlailarene@gmail.com")
     private val allowedReactions = setOf("👍", "❤️", "😂", "😮", "😢", "🔥")
 
     private data class PreparedPhoto(val bytes: ByteArray, val extension: String)
