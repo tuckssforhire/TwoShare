@@ -13,8 +13,8 @@ android {
         applicationId = "com.twoshare.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 17
-        versionName = "0.4.4"
+        versionCode = 18
+        versionName = "0.4.5"
     }
 
     compileOptions {
@@ -39,6 +39,8 @@ dependencies {
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.activity:activity-compose:1.10.1")
+    implementation("androidx.fragment:fragment-ktx:1.9.1")
+    implementation("androidx.biometric:biometric:1.1.0")
 
     implementation("androidx.compose.ui:ui:1.7.8")
     implementation("androidx.compose.ui:ui-tooling-preview:1.7.8")
