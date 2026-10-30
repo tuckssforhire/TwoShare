@@ -12,6 +12,8 @@ import io.github.jan.supabase.postgrest.query.Order
 import io.github.jan.supabase.storage.storage
 import java.time.Instant
 import java.util.UUID
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlin.time.Duration.Companion.hours
 
 class TwoShareRepository {
@@ -20,7 +22,7 @@ class TwoShareRepository {
 
     private val allowedEmails = setOf(
         "eddierodwards@gmail.com",
-        "misamitchlailarene@gmail.com"
+        "urban.needs.ph@gmail.com"
     )
 
     private val allowedReactions = setOf("👍", "❤️", "😂", "😮", "😢", "🔥")
@@ -28,6 +30,48 @@ class TwoShareRepository {
     fun currentUserId(): String? = supabase.auth.currentUserOrNull()?.id
 
     fun isSignedIn(): Boolean = currentUserId() != null
+
+    fun isTransientNetworkError(throwable: Throwable): Boolean {
+        val chain = generateSequence(throwable) { it.cause }.toList()
+        val text = chain.joinToString(" ") {
+            "${it::class.simpleName.orEmpty()} ${it.localizedMessage.orEmpty()}"
+        }.lowercase()
+
+        return listOf(
+            "timeout",
+            "timed out",
+            "failed to connect",
+            "connection reset",
+            "connection closed",
+            "connection abort",
+            "network is unreachable",
+            "unable to resolve host",
+            "broken pipe",
+            "socketexception",
+            "connectexception"
+        ).any(text::contains)
+    }
+
+    internal suspend fun <T> retryNetworkRead(
+        maxAttempts: Int = 3,
+        block: suspend () -> T
+    ): T {
+        var lastFailure: Throwable? = null
+        repeat(maxAttempts) { attempt ->
+            try {
+                return block()
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (t: Throwable) {
+                lastFailure = t
+                if (!isTransientNetworkError(t) || attempt == maxAttempts - 1) {
+                    throw t
+                }
+                delay(600L * (attempt + 1))
+            }
+        }
+        throw lastFailure ?: IllegalStateException("Network request failed")
+    }
 
     suspend fun sendSignInEmail(email: String) {
         val normalized = email.trim().lowercase()
@@ -58,31 +102,37 @@ class TwoShareRepository {
 
     suspend fun requireAllowedUser(): ProfileRow {
         val uid = currentUserId() ?: error("Not signed in")
-        val profile = supabase.from("profiles")
-            .select {
-                filter { eq("id", uid) }
-            }
-            .decodeList<ProfileRow>()
-            .firstOrNull()
+        val profile = retryNetworkRead {
+            supabase.from("profiles")
+                .select {
+                    filter { eq("id", uid) }
+                }
+                .decodeList<ProfileRow>()
+                .firstOrNull()
+        }
         return profile ?: error("This account is not one of the two allowed users.")
     }
 
     suspend fun loadFeed(): List<FeedPost> {
         requireAllowedUser()
 
-        val posts = supabase.from("posts")
-            .select {
-                order("created_at", Order.DESCENDING)
-            }
-            .decodeList<PostRow>()
+        val posts = retryNetworkRead {
+            supabase.from("posts")
+                .select {
+                    order("created_at", Order.DESCENDING)
+                }
+                .decodeList<PostRow>()
+        }
 
         if (posts.isEmpty()) return emptyList()
 
         val profiles = loadProfiles()
-        val likes = supabase.from("likes")
-            .select()
-            .decodeList<LikeRow>()
-            .groupBy { it.postId }
+        val likes = retryNetworkRead {
+            supabase.from("likes")
+                .select()
+                .decodeList<LikeRow>()
+                .groupBy { it.postId }
+        }
 
         val bucket = supabase.storage.from("twoshare")
 
@@ -93,9 +143,9 @@ class TwoShareRepository {
                 .distinct()
 
             val urls = paths.map { path ->
-                signedUrlCache.getOrPut(path) {
+                signedUrlCache[path] ?: retryNetworkRead {
                     bucket.createSignedUrl(path, 24.hours)
-                }
+                }.also { signedUrlCache[path] = it }
             }
 
             FeedPost(
@@ -175,12 +225,14 @@ class TwoShareRepository {
     suspend fun loadComments(postId: String): List<UiComment> {
         requireAllowedUser()
 
-        val rows = supabase.from("comments")
-            .select {
-                filter { eq("post_id", postId) }
-                order("created_at", Order.ASCENDING)
-            }
-            .decodeList<CommentRow>()
+        val rows = retryNetworkRead {
+            supabase.from("comments")
+                .select {
+                    filter { eq("post_id", postId) }
+                    order("created_at", Order.ASCENDING)
+                }
+                .decodeList<CommentRow>()
+        }
 
         val profiles = loadProfiles()
 
@@ -211,25 +263,29 @@ class TwoShareRepository {
     suspend fun loadMessages(): List<UiChatMessage> {
         requireAllowedUser()
 
-        val rows = supabase.from("messages")
-            .select {
-                order("created_at", Order.ASCENDING)
-            }
-            .decodeList<MessageRow>()
+        val rows = retryNetworkRead {
+            supabase.from("messages")
+                .select {
+                    order("created_at", Order.ASCENDING)
+                }
+                .decodeList<MessageRow>()
+        }
 
         val profiles = loadProfiles()
-        val reactions = supabase.from("message_reactions")
-            .select()
-            .decodeList<MessageReactionRow>()
-            .groupBy { it.messageId }
+        val reactions = retryNetworkRead {
+            supabase.from("message_reactions")
+                .select()
+                .decodeList<MessageReactionRow>()
+                .groupBy { it.messageId }
+        }
 
         val bucket = supabase.storage.from("twoshare")
 
         return rows.map { row ->
             val mediaUrl = row.mediaPath?.let { path ->
-                signedUrlCache.getOrPut(path) {
+                signedUrlCache[path] ?: retryNetworkRead {
                     bucket.createSignedUrl(path, 24.hours)
-                }
+                }.also { signedUrlCache[path] = it }
             }
 
             val groupedReactions = reactions[row.id]
@@ -245,8 +301,40 @@ class TwoShareRepository {
                 mediaType = row.mediaType,
                 mediaUrl = mediaUrl,
                 createdAt = row.createdAt,
+                readAt = row.readAt,
                 reactions = groupedReactions
             )
+        }
+    }
+
+    suspend fun unreadMessageCount(): Int {
+        val uid = currentUserId() ?: return 0
+        requireAllowedUser()
+        return retryNetworkRead {
+            supabase.from("messages")
+                .select {
+                    filter {
+                        neq("sender_id", uid)
+                        exact("read_at", null)
+                    }
+                }
+                .decodeList<MessageRow>()
+                .size
+        }
+    }
+
+    suspend fun markIncomingMessagesRead() {
+        val uid = currentUserId() ?: return
+        requireAllowedUser()
+        retryNetworkRead {
+            supabase.from("messages").update({
+                set("read_at", Instant.now().toString())
+            }) {
+                filter {
+                    neq("sender_id", uid)
+                    exact("read_at", null)
+                }
+            }
         }
     }
 
@@ -344,29 +432,33 @@ class TwoShareRepository {
     suspend fun findIncomingCall(): CallRow? {
         val uid = currentUserId() ?: return null
         val cutoff = Instant.now().minusSeconds(120)
-        return supabase.from("calls")
-            .select {
-                filter {
-                    eq("callee_id", uid)
-                    eq("status", "ringing")
+        return retryNetworkRead {
+            supabase.from("calls")
+                .select {
+                    filter {
+                        eq("callee_id", uid)
+                        eq("status", "ringing")
+                    }
+                    order("created_at", Order.DESCENDING)
                 }
-                order("created_at", Order.DESCENDING)
-            }
-            .decodeList<CallRow>()
-            .firstOrNull { call ->
-                runCatching { Instant.parse(call.createdAt).isAfter(cutoff) }
-                    .getOrDefault(false)
-            }
+                .decodeList<CallRow>()
+                .firstOrNull { call ->
+                    runCatching { Instant.parse(call.createdAt).isAfter(cutoff) }
+                        .getOrDefault(false)
+                }
+        }
     }
 
     suspend fun getCall(callId: String): CallRow? {
         requireAllowedUser()
-        return supabase.from("calls")
-            .select {
-                filter { eq("id", callId) }
-            }
-            .decodeList<CallRow>()
-            .firstOrNull()
+        return retryNetworkRead {
+            supabase.from("calls")
+                .select {
+                    filter { eq("id", callId) }
+                }
+                .decodeList<CallRow>()
+                .firstOrNull()
+        }
     }
 
     suspend fun partnerName(call: CallRow): String {
@@ -390,6 +482,16 @@ class TwoShareRepository {
             set("answer_sdp", answerSdp)
             set("status", "accepted")
             set("answered_at", Instant.now().toString())
+        }) {
+            filter { eq("id", callId) }
+        }
+    }
+
+    suspend fun setCallAnswer(callId: String, answerSdp: String) {
+        requireAllowedUser()
+        supabase.from("calls").update({
+            set("answer_sdp", answerSdp)
+            set("status", "accepted")
         }) {
             filter { eq("id", callId) }
         }
@@ -420,10 +522,12 @@ class TwoShareRepository {
     }
 
     private suspend fun loadProfiles(): Map<String, ProfileRow> =
-        supabase.from("profiles")
-            .select()
-            .decodeList<ProfileRow>()
-            .associateBy { it.id }
+        retryNetworkRead {
+            supabase.from("profiles")
+                .select()
+                .decodeList<ProfileRow>()
+                .associateBy { it.id }
+        }
 
     private fun fileExtension(mime: String?, fallback: String): String =
         MimeTypeMap.getSingleton().getExtensionFromMimeType(mime)
