@@ -1,6 +1,7 @@
 package com.twoshare.app
 
 import android.os.Bundle
+import androidx.activity.compose.setContent
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 import androidx.compose.foundation.Image
