@@ -104,7 +104,7 @@ fun MessengerScreen(
             error = null
             runCatching { repository.createOutgoingCall(video) }
                 .onSuccess { call -> onStartCall(call, false) }
-                .onFailure { error = it.localizedMessage ?: "Unable to start call" }
+                .onFailure { error = it.localizedMessage ?: "Unable to start TwoLink" }
             startingCall = false
         }
     }
@@ -163,11 +163,11 @@ fun MessengerScreen(
                     TextButton(onClick = onBack) { Text("← Back") }
                 },
                 actions = {
-                    TextButton(onClick = { startCall(false) }, enabled = !startingCall) {
-                        Text("📞")
+                    IconButton(onClick = { startCall(false) }, enabled = !startingCall) {
+                        Icon(Icons.Default.Call, contentDescription = "Start voice TwoLink")
                     }
-                    TextButton(onClick = { startCall(true) }, enabled = !startingCall) {
-                        Text("🎥")
+                    IconButton(onClick = { startCall(true) }, enabled = !startingCall) {
+                        Icon(Icons.Default.VideoCall, contentDescription = "Start video TwoLink")
                     }
                     TextButton(onClick = { scope.launch { refresh() } }) {
                         Text("↻")
@@ -276,7 +276,7 @@ fun MessengerScreen(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("No messages or calls yet. Say hello 👋")
+                    Text("No messages or TwoLinks yet. Say hello 👋")
                 }
 
                 else -> LazyColumn(
@@ -325,14 +325,14 @@ private fun CallHistoryCard(
     currentUid: String?
 ) {
     val outgoing = call.callerId == currentUid
-    val typeLabel = if (call.isVideo) "video" else "voice"
+    val mode = if (call.isVideo) "Video" else "Voice"
     val title = when {
-        call.answeredAt != null -> "${if (outgoing) "Outgoing" else "Incoming"} $typeLabel call"
-        call.status == "rejected" && outgoing -> "${typeLabel.replaceFirstChar { it.uppercase() }} call declined"
-        call.status == "rejected" -> "Declined $typeLabel call"
-        call.status == "cancelled" && outgoing -> "Cancelled $typeLabel call"
-        call.status == "cancelled" -> "Missed $typeLabel call"
-        else -> "${if (outgoing) "Outgoing" else "Incoming"} $typeLabel call"
+        call.answeredAt != null -> "${if (outgoing) "Outgoing" else "Incoming"} TwoLink • $mode"
+        call.status == "rejected" && outgoing -> "TwoLink declined • $mode"
+        call.status == "rejected" -> "Declined TwoLink • $mode"
+        call.status == "cancelled" && outgoing -> "Cancelled TwoLink • $mode"
+        call.status == "cancelled" -> "Missed TwoLink • $mode"
+        else -> "${if (outgoing) "Outgoing" else "Incoming"} TwoLink • $mode"
     }
     val duration = callDurationText(call)
     val timeText = relativeTimeText(call.createdAt)
@@ -354,7 +354,7 @@ private fun CallHistoryCard(
             ) {
                 Icon(
                     imageVector = if (call.isVideo) Icons.Default.VideoCall else Icons.Default.Call,
-                    contentDescription = if (call.isVideo) "Video call" else "Voice call",
+                    contentDescription = "$mode TwoLink",
                     tint = if (call.answeredAt == null && !outgoing) {
                         MaterialTheme.colorScheme.error
                     } else {
