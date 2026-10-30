@@ -22,6 +22,8 @@ class TwoShareRepository {
     private val allowedEmails = setOf("eddierodwards@gmail.com", "urban.needs.ph@gmail.com")
     private val allowedReactions = setOf("👍", "❤️", "😂", "😮", "😢", "🔥")
 
+    private data class PreparedPhoto(val bytes: ByteArray, val extension: String)
+
     fun currentUserId(): String? = supabase.auth.currentUserOrNull()?.id
     fun isSignedIn(): Boolean = currentUserId() != null
 
@@ -49,9 +51,6 @@ class TwoShareRepository {
     private suspend fun recoverCurrentUserId(): String? {
         currentUserId()?.let { return it }
 
-        // Session refresh/storage updates can briefly leave currentUserOrNull() empty while the
-        // previous request is completing. Do not immediately turn that short transition into a
-        // visible "Not signed in" error after a successful upload/message/call action.
         repeat(4) {
             delay(250)
             currentUserId()?.let { return it }
@@ -96,18 +95,96 @@ class TwoShareRepository {
     }
 
     suspend fun uploadPhoto(context: Context, imageUri: Uri) = uploadPhotos(context, listOf(imageUri))
+
     suspend fun uploadPhotos(context: Context, imageUris: List<Uri>) {
-        val uid = recoverCurrentUserId() ?: error("Your session has expired. Please sign in again."); requireAllowedUser(); require(imageUris.isNotEmpty())
-        data class PreparedPhoto(val bytes: ByteArray, val extension: String)
-        val prepared = imageUris.mapIndexed { index, uri ->
-            val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: error("Unable to read selected image ${index + 1}.")
+        val uid = recoverCurrentUserId() ?: error("Your session has expired. Please sign in again.")
+        requireAllowedUser()
+        require(imageUris.isNotEmpty())
+        val prepared = preparePhotos(context, imageUris)
+        val bucket = supabase.storage.from("twoshare")
+        val paths = mutableListOf<String>()
+        try {
+            prepared.forEach { photo ->
+                val path = "$uid/posts/${UUID.randomUUID()}.${photo.extension}"
+                bucket.upload(path, photo.bytes) { upsert = false }
+                paths += path
+            }
+            supabase.from("posts").insert(PostInsert(uid, paths.first(), paths))
+        } catch (t: Throwable) {
+            if (paths.isNotEmpty()) runCatching { bucket.delete(*paths.toTypedArray()) }
+            throw t
+        }
+    }
+
+    suspend fun editPostPhotos(
+        context: Context,
+        post: FeedPost,
+        removedPaths: Set<String>,
+        addedUris: List<Uri>
+    ) {
+        val uid = recoverCurrentUserId() ?: error("Your session has expired. Please sign in again.")
+        requireAllowedUser()
+        require(post.userId == uid) { "You can only edit your own post." }
+
+        val existingPaths = post.imagePaths.filter { it.isNotBlank() }.distinct()
+        val toRemove = existingPaths.filter { it in removedPaths }
+        val retained = existingPaths.filterNot { it in removedPaths }
+        val prepared = preparePhotos(context, addedUris)
+        require(retained.isNotEmpty() || prepared.isNotEmpty()) { "A post must contain at least one photo." }
+
+        val bucket = supabase.storage.from("twoshare")
+        val uploadedPaths = mutableListOf<String>()
+        try {
+            prepared.forEach { photo ->
+                val path = "$uid/posts/${UUID.randomUUID()}.${photo.extension}"
+                bucket.upload(path, photo.bytes) { upsert = false }
+                uploadedPaths += path
+            }
+
+            val newPaths = retained + uploadedPaths
+            val updated = supabase.from("posts").update({
+                set("image_path", newPaths.first())
+                set("image_paths", newPaths)
+            }) {
+                select()
+                filter {
+                    eq("id", post.id)
+                    eq("user_id", uid)
+                }
+            }.decodeList<PostRow>()
+            require(updated.size == 1) { "Post could not be updated." }
+
+            toRemove.forEach(signedUrlCache::remove)
+            if (toRemove.isNotEmpty()) runCatching { bucket.delete(*toRemove.toTypedArray()) }
+        } catch (t: Throwable) {
+            if (uploadedPaths.isNotEmpty()) runCatching { bucket.delete(*uploadedPaths.toTypedArray()) }
+            throw t
+        }
+    }
+
+    suspend fun deletePost(post: FeedPost) {
+        val uid = recoverCurrentUserId() ?: error("Your session has expired. Please sign in again.")
+        requireAllowedUser()
+        require(post.userId == uid) { "You can only delete your own post." }
+
+        val paths = post.imagePaths.filter { it.isNotBlank() }.distinct()
+        supabase.from("posts").delete {
+            filter {
+                eq("id", post.id)
+                eq("user_id", uid)
+            }
+        }
+        paths.forEach(signedUrlCache::remove)
+        if (paths.isNotEmpty()) runCatching { supabase.storage.from("twoshare").delete(*paths.toTypedArray()) }
+    }
+
+    private fun preparePhotos(context: Context, imageUris: List<Uri>): List<PreparedPhoto> =
+        imageUris.mapIndexed { index, uri ->
+            val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                ?: error("Unable to read selected image ${index + 1}.")
             require(bytes.size <= 15 * 1024 * 1024) { "Photo ${index + 1} must be 15 MB or smaller." }
             PreparedPhoto(bytes, fileExtension(context.contentResolver.getType(uri), "jpg"))
         }
-        val bucket = supabase.storage.from("twoshare"); val paths = mutableListOf<String>()
-        prepared.forEach { p -> val path = "$uid/posts/${UUID.randomUUID()}.${p.extension}"; bucket.upload(path, p.bytes) { upsert = false }; paths += path }
-        supabase.from("posts").insert(PostInsert(uid, paths.first(), paths))
-    }
 
     suspend fun toggleLike(post: FeedPost) {
         val uid = recoverCurrentUserId() ?: error("Your session has expired. Please sign in again."); requireAllowedUser()

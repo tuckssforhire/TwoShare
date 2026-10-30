@@ -4,12 +4,15 @@ import android.content.Intent
 import android.text.format.DateUtils
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -52,6 +55,7 @@ fun FeedScreen(
     var commentsPost by remember { mutableStateOf<FeedPost?>(null) }
     var viewerPost by remember { mutableStateOf<FeedPost?>(null) }
     var viewerIndex by remember { mutableStateOf(0) }
+    var editPost by remember { mutableStateOf<FeedPost?>(null) }
     var showAccountSettings by remember { mutableStateOf(false) }
 
     fun friendlyError(throwable: Throwable, fallback: String): String {
@@ -197,7 +201,8 @@ fun FeedScreen(
                                         .onFailure { error = friendlyError(it, "Like failed.") }
                                 }
                             },
-                            onComments = { commentsPost = post }
+                            onComments = { commentsPost = post },
+                            onEdit = { editPost = post }
                         )
                     }
                 }
@@ -208,11 +213,28 @@ fun FeedScreen(
     if (showAccountSettings) AccountSettingsDialog(authManager = authManager, onDismiss = { showAccountSettings = false })
     commentsPost?.let { post -> CommentsDialog(post = post, repository = repository, onDismiss = { commentsPost = null }) }
     viewerPost?.let { post -> PhotoViewerDialog(post = post, initialIndex = viewerIndex, onDismiss = { viewerPost = null }) }
+    editPost?.let { post ->
+        PostEditorDialog(
+            post = post,
+            repository = repository,
+            onDismiss = { editPost = null },
+            onChanged = { scope.launch { refresh() } },
+            onDeleted = { scope.launch { refresh() } }
+        )
+    }
 }
 
 @Composable
-private fun PostCard(post: FeedPost, currentUid: String?, onImageClick: (Int) -> Unit, onLike: () -> Unit, onComments: () -> Unit) {
+private fun PostCard(
+    post: FeedPost,
+    currentUid: String?,
+    onImageClick: (Int) -> Unit,
+    onLike: () -> Unit,
+    onComments: () -> Unit,
+    onEdit: () -> Unit
+) {
     val liked = currentUid != null && post.likedBy.contains(currentUid)
+    val ownPost = currentUid != null && currentUid == post.userId
     val timeText = remember(post.createdAt) {
         runCatching {
             val millis = OffsetDateTime.parse(post.createdAt).toInstant().toEpochMilli()
@@ -230,6 +252,7 @@ private fun PostCard(post: FeedPost, currentUid: String?, onImageClick: (Int) ->
             Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)) {
                 TextButton(onClick = onLike) { Text(if (liked) "♥" else "♡"); Spacer(Modifier.width(6.dp)); Text(if (post.likedBy.isEmpty()) "Like" else "${post.likedBy.size}") }
                 TextButton(onClick = onComments) { Text("Comments") }
+                if (ownPost) TextButton(onClick = onEdit) { Text("Edit") }
             }
         }
     }
@@ -262,20 +285,56 @@ private fun GalleryPreview(urls: List<String>, onImageClick: (Int) -> Unit) {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun PhotoViewerDialog(post: FeedPost, initialIndex: Int, onDismiss: () -> Unit) {
     if (post.imageUrls.isEmpty()) return
-    var index by remember(post.id, initialIndex) { mutableStateOf(initialIndex.coerceIn(0, post.imageUrls.lastIndex)) }
+    val pagerState = rememberPagerState(
+        initialPage = initialIndex.coerceIn(0, post.imageUrls.lastIndex),
+        pageCount = { post.imageUrls.size }
+    )
+
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
-            AsyncImage(model = post.imageUrls[index], contentDescription = "Photo ${index + 1} of ${post.imageUrls.size}", modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
-            Button(onClick = onDismiss, modifier = Modifier.align(Alignment.TopStart).padding(16.dp)) { Text("← Back") }
-            Surface(modifier = Modifier.align(Alignment.TopCenter).padding(top = 24.dp), color = Color.Black.copy(alpha = 0.65f), shape = RoundedCornerShape(16.dp)) {
-                Text("${index + 1} / ${post.imageUrls.size}", color = Color.White, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.fillMaxSize()
+            ) { page ->
+                AsyncImage(
+                    model = post.imageUrls[page],
+                    contentDescription = "Photo ${page + 1} of ${post.imageUrls.size}",
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Fit
+                )
             }
-            if (post.imageUrls.size > 1) Row(modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(18.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedButton(onClick = { if (index > 0) index-- }, enabled = index > 0, modifier = Modifier.weight(1f)) { Text("Previous") }
-                OutlinedButton(onClick = { if (index < post.imageUrls.lastIndex) index++ }, enabled = index < post.imageUrls.lastIndex, modifier = Modifier.weight(1f)) { Text("Next") }
+
+            Button(onClick = onDismiss, modifier = Modifier.align(Alignment.TopStart).padding(16.dp)) { Text("← Back") }
+
+            Surface(
+                modifier = Modifier.align(Alignment.TopCenter).padding(top = 24.dp),
+                color = Color.Black.copy(alpha = 0.65f),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Text(
+                    "${pagerState.currentPage + 1} / ${post.imageUrls.size}",
+                    color = Color.White,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                )
+            }
+
+            if (post.imageUrls.size > 1) {
+                Surface(
+                    modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 18.dp),
+                    color = Color.Black.copy(alpha = 0.55f),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Text(
+                        "Swipe left or right",
+                        color = Color.White,
+                        style = MaterialTheme.typography.labelMedium,
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp)
+                    )
+                }
             }
         }
     }
