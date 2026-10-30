@@ -13,8 +13,8 @@ android {
         applicationId = "com.twoshare.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 18
-        versionName = "0.4.5"
+        versionCode = 19
+        versionName = "0.4.6"
     }
 
     compileOptions {
@@ -52,7 +52,7 @@ dependencies {
     implementation(platform("io.github.jan-tennert.supabase:bom:3.8.0"))
     implementation("io.github.jan-tennert.supabase:auth-kt")
     implementation("io.github.jan-tennert.supabase:postgrest-kt")
-    implementation("io.github.jan-tennert.supabase:storage-kt")
+    implementation("io.github.jan.supabase:storage-kt")
     implementation("io.ktor:ktor-client-android:3.6.0")
 
     implementation("io.coil-kt:coil-compose:2.7.0")
