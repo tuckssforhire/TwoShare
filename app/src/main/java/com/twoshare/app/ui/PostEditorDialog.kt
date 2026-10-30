@@ -4,33 +4,12 @@ import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
@@ -53,6 +32,7 @@ fun PostEditorDialog(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    var caption by remember(post.id) { mutableStateOf(post.caption.orEmpty()) }
     var removedPaths by remember(post.id) { mutableStateOf(emptySet<String>()) }
     var pendingUris by remember(post.id) { mutableStateOf(emptyList<Uri>()) }
     var saving by remember { mutableStateOf(false) }
@@ -77,6 +57,8 @@ fun PostEditorDialog(
 
     val keptExisting = post.imagePaths.count { it !in removedPaths }
     val finalCount = keptExisting + pendingUris.size
+    val captionChanged = caption.trim() != post.caption.orEmpty().trim()
+    val hasChanges = removedPaths.isNotEmpty() || pendingUris.isNotEmpty() || captionChanged
 
     Dialog(
         onDismissRequest = { if (!saving) onDismiss() },
@@ -92,7 +74,7 @@ fun PostEditorDialog(
             Column(modifier = Modifier.padding(18.dp)) {
                 Text("Edit post", style = MaterialTheme.typography.headlineSmall)
                 Text(
-                    "Add photos, remove individual photos, or delete the whole post.",
+                    "Change the caption, add or remove photos, or delete the whole post.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -104,6 +86,20 @@ fun PostEditorDialog(
                         modifier = Modifier.padding(top = 8.dp)
                     )
                 }
+
+                Spacer(Modifier.height(12.dp))
+
+                OutlinedTextField(
+                    value = caption,
+                    onValueChange = { if (it.length <= 2000) caption = it },
+                    enabled = !saving,
+                    label = { Text("Caption (optional)") },
+                    placeholder = { Text("Write something about these photos…") },
+                    minLines = 2,
+                    maxLines = 5,
+                    supportingText = { Text("${caption.length} / 2000") },
+                    modifier = Modifier.fillMaxWidth()
+                )
 
                 Spacer(Modifier.height(12.dp))
 
@@ -216,7 +212,8 @@ fun PostEditorDialog(
                                     context = context,
                                     post = post,
                                     removedPaths = removedPaths,
-                                    addedUris = pendingUris
+                                    addedUris = pendingUris,
+                                    caption = caption
                                 )
                             }.onSuccess {
                                 onChanged()
@@ -227,11 +224,14 @@ fun PostEditorDialog(
                             saving = false
                         }
                     },
-                    enabled = !saving && finalCount > 0 && (removedPaths.isNotEmpty() || pendingUris.isNotEmpty()),
+                    enabled = !saving && finalCount > 0 && hasChanges,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     if (saving) {
-                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp
+                        )
                     } else {
                         Text("Save changes")
                     }
@@ -248,7 +248,9 @@ fun PostEditorDialog(
                     ) {
                         Text("Delete post", color = MaterialTheme.colorScheme.error)
                     }
-                    TextButton(enabled = !saving, onClick = onDismiss) { Text("Cancel") }
+                    TextButton(enabled = !saving, onClick = onDismiss) {
+                        Text("Cancel")
+                    }
                 }
             }
         }
@@ -258,7 +260,11 @@ fun PostEditorDialog(
         AlertDialog(
             onDismissRequest = { if (!saving) confirmDelete = false },
             title = { Text("Delete this post?") },
-            text = { Text("The post, its likes, comments, and uploaded photos will be removed. This cannot be undone.") },
+            text = {
+                Text(
+                    "The post, its likes, comments, caption, and uploaded photos will be removed. This cannot be undone."
+                )
+            },
             confirmButton = {
                 TextButton(
                     enabled = !saving,
@@ -284,7 +290,10 @@ fun PostEditorDialog(
                 }
             },
             dismissButton = {
-                TextButton(enabled = !saving, onClick = { confirmDelete = false }) { Text("Cancel") }
+                TextButton(
+                    enabled = !saving,
+                    onClick = { confirmDelete = false }
+                ) { Text("Cancel") }
             }
         )
     }
