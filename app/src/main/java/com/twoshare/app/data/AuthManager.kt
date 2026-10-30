@@ -2,6 +2,7 @@ package com.twoshare.app.data
 
 import android.content.Context
 import android.provider.Settings
+import androidx.biometric.BiometricManager
 import com.twoshare.app.model.ProfileRow
 import io.github.jan.supabase.auth.OtpType
 import io.github.jan.supabase.auth.auth
@@ -72,14 +73,6 @@ class AuthManager {
         sendOtp(normalized)
     }
 
-    suspend fun startPasswordSetup(email: String) {
-        val normalized = normalizeEmail(email)
-        if (supabase.auth.currentUserOrNull() != null) {
-            supabase.auth.signOut()
-        }
-        sendOtp(normalized)
-    }
-
     suspend fun verifyNewDevice(
         context: Context,
         email: String,
@@ -89,19 +82,40 @@ class AuthManager {
         markDeviceTrusted(context, profile.id)
     }
 
-    suspend fun verifyAndSetPassword(
-        context: Context,
-        email: String,
-        code: String,
-        newPassword: String
-    ) {
-        require(newPassword.length >= 6) { "Password must be at least 6 characters." }
+    suspend fun changePassword(currentPassword: String, newPassword: String) {
+        require(currentUserId() != null) { "You must be signed in to change your password." }
+        require(currentPassword.isNotBlank()) { "Enter your current password." }
+        require(newPassword.length >= 8) { "New password must be at least 8 characters." }
+        require(currentPassword != newPassword) { "Choose a different new password." }
 
-        val profile = verifyOtpAndRequireAllowed(email, code)
         supabase.auth.updateUser {
             password = newPassword
+            this.currentPassword = currentPassword
         }
-        markDeviceTrusted(context, profile.id)
+    }
+
+    fun canUseBiometrics(context: Context): Boolean {
+        return BiometricManager.from(context).canAuthenticate(
+            BiometricManager.Authenticators.BIOMETRIC_WEAK
+        ) == BiometricManager.BIOMETRIC_SUCCESS
+    }
+
+    fun isBiometricEnabled(context: Context): Boolean {
+        val userId = currentUserId() ?: return false
+        return prefs(context).getBoolean(biometricKey(userId), false)
+    }
+
+    fun setBiometricEnabled(context: Context, enabled: Boolean) {
+        val userId = currentUserId() ?: error("Not signed in")
+        if (enabled) {
+            require(canUseBiometrics(context)) {
+                "No fingerprint or face authentication is enrolled on this phone."
+            }
+        }
+        prefs(context)
+            .edit()
+            .putBoolean(biometricKey(userId), enabled)
+            .apply()
     }
 
     private suspend fun verifyOtpAndRequireAllowed(
@@ -174,6 +188,7 @@ class AuthManager {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     private fun trustKey(userId: String) = "trusted_device_$userId"
+    private fun biometricKey(userId: String) = "biometric_enabled_$userId"
 
     companion object {
         private const val PREFS_NAME = "twoshare_auth_v2"
