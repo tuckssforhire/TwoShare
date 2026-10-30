@@ -11,8 +11,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -72,8 +70,6 @@ fun FeedScreen(
                 error = null
             }
             .onFailure {
-                // Wi-Fi -> mobile data briefly invalidates in-flight sockets. Keep the last
-                // successful feed on screen and retry silently instead of exposing Ktor URLs.
                 if (!repository.isTransientNetworkError(it)) {
                     error = friendlyError(it, "Unable to refresh photos.")
                 }
@@ -126,12 +122,13 @@ fun FeedScreen(
             TopAppBar(
                 title = {
                     Row(
+                        modifier = Modifier.clickable { showAccountSettings = true },
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Image(
                             painter = painterResource(R.drawable.twoshare_icon),
-                            contentDescription = "TwoShare logo",
+                            contentDescription = "TwoShare account settings",
                             modifier = Modifier.size(34.dp)
                         )
                         Text("TwoShare")
@@ -146,9 +143,6 @@ fun FeedScreen(
                         }
                     ) {
                         TextButton(onClick = onOpenMessenger) { Text("Chat") }
-                    }
-                    IconButton(onClick = { showAccountSettings = true }) {
-                        Icon(Icons.Default.Settings, contentDescription = "Account & security")
                     }
                     TextButton(onClick = {
                         scope.launch {
