@@ -46,6 +46,25 @@ class TwoShareRepository {
         throw lastFailure ?: IllegalStateException("Network request failed")
     }
 
+    private suspend fun recoverCurrentUserId(): String? {
+        currentUserId()?.let { return it }
+
+        // Session refresh/storage updates can briefly leave currentUserOrNull() empty while the
+        // previous request is completing. Do not immediately turn that short transition into a
+        // visible "Not signed in" error after a successful upload/message/call action.
+        repeat(4) {
+            delay(250)
+            currentUserId()?.let { return it }
+        }
+
+        if (supabase.auth.currentSessionOrNull() != null) {
+            runCatching { supabase.auth.refreshCurrentSession() }
+            currentUserId()?.let { return it }
+        }
+
+        return null
+    }
+
     suspend fun sendSignInEmail(email: String) {
         val normalized = email.trim().lowercase(); require(normalized in allowedEmails) { "This email is not authorized for TwoShare." }
         supabase.auth.signInWith(OTP) { this.email = normalized; createUser = false }
@@ -57,7 +76,7 @@ class TwoShareRepository {
     suspend fun signOut() { supabase.auth.signOut() }
 
     suspend fun requireAllowedUser(): ProfileRow {
-        val uid = currentUserId() ?: error("Not signed in")
+        val uid = recoverCurrentUserId() ?: error("Your session has expired. Please sign in again.")
         return retryNetworkRead { supabase.from("profiles").select { filter { eq("id", uid) } }.decodeList<ProfileRow>().firstOrNull() }
             ?: error("This account is not one of the two allowed users.")
     }
@@ -78,7 +97,7 @@ class TwoShareRepository {
 
     suspend fun uploadPhoto(context: Context, imageUri: Uri) = uploadPhotos(context, listOf(imageUri))
     suspend fun uploadPhotos(context: Context, imageUris: List<Uri>) {
-        val uid = currentUserId() ?: error("Not signed in"); requireAllowedUser(); require(imageUris.isNotEmpty())
+        val uid = recoverCurrentUserId() ?: error("Your session has expired. Please sign in again."); requireAllowedUser(); require(imageUris.isNotEmpty())
         data class PreparedPhoto(val bytes: ByteArray, val extension: String)
         val prepared = imageUris.mapIndexed { index, uri ->
             val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: error("Unable to read selected image ${index + 1}.")
@@ -91,7 +110,7 @@ class TwoShareRepository {
     }
 
     suspend fun toggleLike(post: FeedPost) {
-        val uid = currentUserId() ?: error("Not signed in"); requireAllowedUser()
+        val uid = recoverCurrentUserId() ?: error("Your session has expired. Please sign in again."); requireAllowedUser()
         if (uid in post.likedBy) supabase.from("likes").delete { filter { eq("post_id", post.id); eq("user_id", uid) } }
         else supabase.from("likes").insert(LikeInsert(post.id, uid))
     }
@@ -99,7 +118,7 @@ class TwoShareRepository {
         requireAllowedUser(); val rows = retryNetworkRead { supabase.from("comments").select { filter { eq("post_id", postId) }; order("created_at", Order.ASCENDING) }.decodeList<CommentRow>() }; val profiles = loadProfiles()
         return rows.map { UiComment(it.id, it.userId, profiles[it.userId]?.displayName ?: "User", it.text, it.createdAt) }
     }
-    suspend fun addComment(postId: String, text: String) { val uid=currentUserId()?:error("Not signed in"); requireAllowedUser(); val cleaned=text.trim(); require(cleaned.isNotEmpty()); require(cleaned.length<=1000); supabase.from("comments").insert(CommentInsert(postId,uid,cleaned)) }
+    suspend fun addComment(postId: String, text: String) { val uid=recoverCurrentUserId()?:error("Your session has expired. Please sign in again."); requireAllowedUser(); val cleaned=text.trim(); require(cleaned.isNotEmpty()); require(cleaned.length<=1000); supabase.from("comments").insert(CommentInsert(postId,uid,cleaned)) }
 
     suspend fun loadMessages(): List<UiChatMessage> {
         requireAllowedUser(); val rows=retryNetworkRead { supabase.from("messages").select { order("created_at",Order.ASCENDING) }.decodeList<MessageRow>() }; val profiles=loadProfiles(); val reactions=retryNetworkRead { supabase.from("message_reactions").select().decodeList<MessageReactionRow>().groupBy { it.messageId } }; val bucket=supabase.storage.from("twoshare")
@@ -109,20 +128,20 @@ class TwoShareRepository {
             UiChatMessage(row.id,row.senderId,profiles[row.senderId]?.displayName?:"User",row.body,row.mediaType,mediaUrl,row.createdAt,row.readAt,grouped)
         }
     }
-    suspend fun unreadMessageCount(): Int { val uid=currentUserId()?:return 0; requireAllowedUser(); return retryNetworkRead { supabase.from("messages").select { filter { neq("sender_id",uid); exact("read_at",null) } }.decodeList<MessageRow>().size } }
-    suspend fun markIncomingMessagesRead() { val uid=currentUserId()?:return; requireAllowedUser(); retryNetworkRead { supabase.from("messages").update({ set("read_at",Instant.now().toString()) }) { filter { neq("sender_id",uid); exact("read_at",null) } } } }
+    suspend fun unreadMessageCount(): Int { val uid=recoverCurrentUserId()?:return 0; requireAllowedUser(); return retryNetworkRead { supabase.from("messages").select { filter { neq("sender_id",uid); exact("read_at",null) } }.decodeList<MessageRow>().size } }
+    suspend fun markIncomingMessagesRead() { val uid=recoverCurrentUserId()?:return; requireAllowedUser(); retryNetworkRead { supabase.from("messages").update({ set("read_at",Instant.now().toString()) }) { filter { neq("sender_id",uid); exact("read_at",null) } } } }
     suspend fun sendMessage(context: Context,text:String,attachmentUri:Uri?) {
-        val uid=currentUserId()?:error("Not signed in"); requireAllowedUser(); val cleaned=text.trim().takeIf { it.isNotEmpty() }; require(cleaned==null||cleaned.length<=2000); require(cleaned!=null||attachmentUri!=null)
+        val uid=recoverCurrentUserId()?:error("Your session has expired. Please sign in again."); requireAllowedUser(); val cleaned=text.trim().takeIf { it.isNotEmpty() }; require(cleaned==null||cleaned.length<=2000); require(cleaned!=null||attachmentUri!=null)
         var mediaPath:String?=null; var mediaType:String?=null; var mediaMime:String?=null
         if(attachmentUri!=null){ val mime=context.contentResolver.getType(attachmentUri)?.lowercase()?:error("Unable to determine the attachment type."); val type=when{mime.startsWith("image/")->"image";mime.startsWith("video/")->"video";else->error("Only photos and videos can be sent.")}; val bytes=context.contentResolver.openInputStream(attachmentUri)?.use{it.readBytes()}?:error("Unable to read the selected attachment."); require(bytes.size<=25*1024*1024); val path="$uid/chat/${UUID.randomUUID()}.${fileExtension(mime,if(type=="video")"mp4" else "jpg")}"; supabase.storage.from("twoshare").upload(path,bytes){upsert=false}; mediaPath=path;mediaType=type;mediaMime=mime }
         supabase.from("messages").insert(MessageInsert(uid,cleaned,mediaPath,mediaType,mediaMime))
     }
-    suspend fun toggleMessageReaction(message:UiChatMessage,emoji:String){val uid=currentUserId()?:error("Not signed in");requireAllowedUser();require(emoji in allowedReactions);if(message.reactions[emoji]?.contains(uid)==true)supabase.from("message_reactions").delete{filter{eq("message_id",message.id);eq("user_id",uid);eq("emoji",emoji)}}else supabase.from("message_reactions").insert(MessageReactionInsert(message.id,uid,emoji))}
+    suspend fun toggleMessageReaction(message:UiChatMessage,emoji:String){val uid=recoverCurrentUserId()?:error("Your session has expired. Please sign in again.");requireAllowedUser();require(emoji in allowedReactions);if(message.reactions[emoji]?.contains(uid)==true)supabase.from("message_reactions").delete{filter{eq("message_id",message.id);eq("user_id",uid);eq("emoji",emoji)}}else supabase.from("message_reactions").insert(MessageReactionInsert(message.id,uid,emoji))}
 
-    suspend fun createOutgoingCall(isVideo:Boolean):CallRow{val uid=currentUserId()?:error("Not signed in");requireAllowedUser();val other=loadProfiles().values.firstOrNull{it.id!=uid}?:error("The second TwoShare account is not available.");return supabase.from("calls").insert(CallInsert(uid,other.id,isVideo)){select()}.decodeSingle()}
-    suspend fun findIncomingCall():CallRow?{val uid=currentUserId()?:return null;val cutoff=Instant.now().minusSeconds(120);return retryNetworkRead{supabase.from("calls").select{filter{eq("callee_id",uid);eq("status","ringing")};order("created_at",Order.DESCENDING)}.decodeList<CallRow>().firstOrNull{runCatching{Instant.parse(it.createdAt).isAfter(cutoff)}.getOrDefault(false)}}}
+    suspend fun createOutgoingCall(isVideo:Boolean):CallRow{val uid=recoverCurrentUserId()?:error("Your session has expired. Please sign in again.");requireAllowedUser();val other=loadProfiles().values.firstOrNull{it.id!=uid}?:error("The second TwoShare account is not available.");return supabase.from("calls").insert(CallInsert(uid,other.id,isVideo)){select()}.decodeSingle()}
+    suspend fun findIncomingCall():CallRow?{val uid=recoverCurrentUserId()?:return null;val cutoff=Instant.now().minusSeconds(120);return retryNetworkRead{supabase.from("calls").select{filter{eq("callee_id",uid);eq("status","ringing")};order("created_at",Order.DESCENDING)}.decodeList<CallRow>().firstOrNull{runCatching{Instant.parse(it.createdAt).isAfter(cutoff)}.getOrDefault(false)}}}
     suspend fun getCall(callId:String):CallRow?{requireAllowedUser();return retryNetworkRead{supabase.from("calls").select{filter{eq("id",callId)}}.decodeList<CallRow>().firstOrNull()}}
-    suspend fun partnerName(call:CallRow):String{val uid=currentUserId()?:return "TwoShare";return loadProfiles()[if(call.callerId==uid)call.calleeId else call.callerId]?.displayName?:"TwoShare"}
+    suspend fun partnerName(call:CallRow):String{val uid=recoverCurrentUserId()?:return "TwoShare";return loadProfiles()[if(call.callerId==uid)call.calleeId else call.callerId]?.displayName?:"TwoShare"}
     suspend fun setCallOffer(callId:String,sdp:String){requireAllowedUser();supabase.from("calls").update({set("offer_sdp",sdp)}){filter{eq("id",callId)}}}
     suspend fun acceptCall(callId:String,answerSdp:String){requireAllowedUser();supabase.from("calls").update({set("answer_sdp",answerSdp);set("status","accepted");set("answered_at",Instant.now().toString())}){filter{eq("id",callId)}}}
     suspend fun setCallAnswer(callId:String,answerSdp:String){requireAllowedUser();supabase.from("calls").update({set("answer_sdp",answerSdp);set("status","accepted")}){filter{eq("id",callId)}}}
