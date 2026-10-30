@@ -13,6 +13,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.filled.VideoCall
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -25,14 +28,31 @@ import androidx.compose.ui.viewinterop.AndroidView
 import coil.compose.AsyncImage
 import com.twoshare.app.R
 import com.twoshare.app.data.TwoShareRepository
+import com.twoshare.app.data.loadCallHistory
 import com.twoshare.app.model.CallRow
 import com.twoshare.app.model.UiChatMessage
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import java.time.Duration
 import java.time.OffsetDateTime
 
 private val quickReactions = listOf("👍", "❤️", "😂", "😮", "😢", "🔥")
+
+private sealed interface MessengerTimelineItem {
+    val key: String
+    val createdAt: String
+
+    data class MessageEntry(val message: UiChatMessage) : MessengerTimelineItem {
+        override val key: String = "message-${message.id}"
+        override val createdAt: String = message.createdAt
+    }
+
+    data class CallEntry(val call: CallRow) : MessengerTimelineItem {
+        override val key: String = "call-${call.id}"
+        override val createdAt: String = call.createdAt
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -46,6 +66,7 @@ fun MessengerScreen(
     val listState = rememberLazyListState()
 
     var messages by remember { mutableStateOf(emptyList<UiChatMessage>()) }
+    var calls by remember { mutableStateOf(emptyList<CallRow>()) }
     var draft by remember { mutableStateOf("") }
     var attachment by remember { mutableStateOf<android.net.Uri?>(null) }
     var loading by remember { mutableStateOf(true) }
@@ -53,15 +74,26 @@ fun MessengerScreen(
     var startingCall by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
+    val timeline = remember(messages, calls) {
+        (messages.map { MessengerTimelineItem.MessageEntry(it) } +
+            calls.map { MessengerTimelineItem.CallEntry(it) })
+            .sortedBy { timelineEpochMillis(it.createdAt) }
+    }
+
     BackHandler { onBack() }
 
     suspend fun refresh() {
-        runCatching { repository.loadMessages() }
-            .onSuccess {
-                messages = it
-                error = null
-            }
-            .onFailure { error = it.localizedMessage ?: "Unable to load messages" }
+        runCatching {
+            val loadedMessages = repository.loadMessages()
+            val loadedCalls = repository.loadCallHistory()
+            loadedMessages to loadedCalls
+        }.onSuccess { (loadedMessages, loadedCalls) ->
+            messages = loadedMessages
+            calls = loadedCalls
+            error = null
+        }.onFailure {
+            error = it.localizedMessage ?: "Unable to load Messenger"
+        }
         loading = false
     }
 
@@ -85,9 +117,9 @@ fun MessengerScreen(
         }
     }
 
-    LaunchedEffect(messages.size) {
-        if (messages.isNotEmpty()) {
-            listState.animateScrollToItem(messages.lastIndex)
+    LaunchedEffect(timeline.size) {
+        if (timeline.isNotEmpty()) {
+            listState.animateScrollToItem(timeline.lastIndex)
         }
     }
 
@@ -240,11 +272,11 @@ fun MessengerScreen(
                     CircularProgressIndicator()
                 }
 
-                messages.isEmpty() -> Box(
+                timeline.isEmpty() -> Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("No messages yet. Say hello 👋")
+                    Text("No messages or calls yet. Say hello 👋")
                 }
 
                 else -> LazyColumn(
@@ -253,21 +285,89 @@ fun MessengerScreen(
                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    items(messages, key = { it.id }) { message ->
-                        MessageBubble(
-                            message = message,
-                            currentUid = repository.currentUserId(),
-                            onReaction = { emoji ->
-                                scope.launch {
-                                    runCatching {
-                                        repository.toggleMessageReaction(message, emoji)
-                                    }.onSuccess {
-                                        refresh()
-                                    }.onFailure {
-                                        error = it.localizedMessage ?: "Reaction failed"
+                    items(timeline, key = { it.key }) { item ->
+                        when (item) {
+                            is MessengerTimelineItem.MessageEntry -> {
+                                MessageBubble(
+                                    message = item.message,
+                                    currentUid = repository.currentUserId(),
+                                    onReaction = { emoji ->
+                                        scope.launch {
+                                            runCatching {
+                                                repository.toggleMessageReaction(item.message, emoji)
+                                            }.onSuccess {
+                                                refresh()
+                                            }.onFailure {
+                                                error = it.localizedMessage ?: "Reaction failed"
+                                            }
+                                        }
                                     }
-                                }
+                                )
                             }
+
+                            is MessengerTimelineItem.CallEntry -> {
+                                CallHistoryCard(
+                                    call = item.call,
+                                    currentUid = repository.currentUserId()
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CallHistoryCard(
+    call: CallRow,
+    currentUid: String?
+) {
+    val outgoing = call.callerId == currentUid
+    val typeLabel = if (call.isVideo) "video" else "voice"
+    val title = when {
+        call.answeredAt != null -> "${if (outgoing) "Outgoing" else "Incoming"} $typeLabel call"
+        call.status == "rejected" && outgoing -> "${typeLabel.replaceFirstChar { it.uppercase() }} call declined"
+        call.status == "rejected" -> "Declined $typeLabel call"
+        call.status == "cancelled" && outgoing -> "Cancelled $typeLabel call"
+        call.status == "cancelled" -> "Missed $typeLabel call"
+        else -> "${if (outgoing) "Outgoing" else "Incoming"} $typeLabel call"
+    }
+    val duration = callDurationText(call)
+    val timeText = relativeTimeText(call.createdAt)
+    val detail = listOfNotNull(duration, timeText).joinToString(" • ")
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.Center
+    ) {
+        Surface(
+            shape = RoundedCornerShape(18.dp),
+            tonalElevation = 1.dp,
+            modifier = Modifier.widthIn(max = 310.dp)
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Icon(
+                    imageVector = if (call.isVideo) Icons.Default.VideoCall else Icons.Default.Call,
+                    contentDescription = if (call.isVideo) "Video call" else "Voice call",
+                    tint = if (call.answeredAt == null && !outgoing) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.primary
+                    }
+                )
+                Column {
+                    Text(title, style = MaterialTheme.typography.labelLarge)
+                    if (detail.isNotBlank()) {
+                        Text(
+                            detail,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
@@ -291,14 +391,7 @@ private fun MessageBubble(
     var reactionPickerOpen by remember(message.id) { mutableStateOf(false) }
 
     val timeText = remember(message.createdAt) {
-        runCatching {
-            val millis = OffsetDateTime.parse(message.createdAt).toInstant().toEpochMilli()
-            DateUtils.getRelativeTimeSpanString(
-                millis,
-                System.currentTimeMillis(),
-                DateUtils.MINUTE_IN_MILLIS
-            ).toString()
-        }.getOrDefault("Recently")
+        relativeTimeText(message.createdAt)
     }
 
     Row(
@@ -410,6 +503,38 @@ private fun MessageBubble(
                 }
             }
         }
+    }
+}
+
+private fun timelineEpochMillis(value: String): Long = runCatching {
+    OffsetDateTime.parse(value).toInstant().toEpochMilli()
+}.getOrDefault(0L)
+
+private fun relativeTimeText(value: String): String = runCatching {
+    val millis = OffsetDateTime.parse(value).toInstant().toEpochMilli()
+    DateUtils.getRelativeTimeSpanString(
+        millis,
+        System.currentTimeMillis(),
+        DateUtils.MINUTE_IN_MILLIS
+    ).toString()
+}.getOrDefault("Recently")
+
+private fun callDurationText(call: CallRow): String? {
+    val answered = call.answeredAt ?: return null
+    val ended = call.endedAt ?: return "In progress"
+    val seconds = runCatching {
+        Duration.between(
+            OffsetDateTime.parse(answered).toInstant(),
+            OffsetDateTime.parse(ended).toInstant()
+        ).seconds.coerceAtLeast(0)
+    }.getOrNull() ?: return null
+
+    val minutes = seconds / 60
+    val remainingSeconds = seconds % 60
+    return if (minutes > 0) {
+        "%d:%02d".format(minutes, remainingSeconds)
+    } else {
+        "$seconds sec"
     }
 }
 
