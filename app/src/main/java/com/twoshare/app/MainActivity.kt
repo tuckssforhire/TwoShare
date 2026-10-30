@@ -1,5 +1,7 @@
 package com.twoshare.app
 
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.compose.setContent
 import androidx.biometric.BiometricManager
@@ -26,6 +28,8 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
+import com.twoshare.app.data.AppVersionInfo
+import com.twoshare.app.data.AppVersionRepository
 import com.twoshare.app.data.AuthManager
 import com.twoshare.app.data.SupabaseProvider
 import com.twoshare.app.data.TwoShareRepository
@@ -52,6 +56,7 @@ class MainActivity : FragmentActivity() {
             TwoShareTheme {
                 val repository = remember { TwoShareRepository() }
                 val authManager = remember { AuthManager() }
+                val versionRepository = remember { AppVersionRepository() }
                 val scope = rememberCoroutineScope()
 
                 var authChecked by remember { mutableStateOf(false) }
@@ -63,6 +68,16 @@ class MainActivity : FragmentActivity() {
                 var activeCall by remember { mutableStateOf<CallRow?>(null) }
                 var activeCallIncoming by remember { mutableStateOf(false) }
                 var incomingCall by remember { mutableStateOf<CallRow?>(null) }
+                var updateInfo by remember { mutableStateOf<AppVersionInfo?>(null) }
+
+                LaunchedEffect(Unit) {
+                    // Version checking is deliberately non-blocking. If the network or version
+                    // endpoint is temporarily unavailable, TwoShare still opens normally.
+                    runCatching { versionRepository.latestVersion() }
+                        .getOrNull()
+                        ?.takeIf { it.latestVersionCode > BuildConfig.VERSION_CODE }
+                        ?.let { updateInfo = it }
+                }
 
                 LaunchedEffect(Unit) {
                     val startedAt = System.currentTimeMillis()
@@ -228,6 +243,42 @@ class MainActivity : FragmentActivity() {
                                 }
                             }) {
                                 Text("Decline")
+                            }
+                        }
+                    )
+                }
+
+                val availableUpdate = updateInfo
+                if (authChecked && activeCall == null && incomingCall == null && availableUpdate != null) {
+                    AlertDialog(
+                        onDismissRequest = { updateInfo = null },
+                        title = { Text("TwoShare update available") },
+                        text = {
+                            Text(
+                                "A newer version of TwoShare (${availableUpdate.latestVersionName}) is available. " +
+                                    "Download the latest version here."
+                            )
+                        },
+                        confirmButton = {
+                            TextButton(
+                                onClick = {
+                                    runCatching {
+                                        startActivity(
+                                            Intent(
+                                                Intent.ACTION_VIEW,
+                                                Uri.parse(availableUpdate.downloadUrl)
+                                            )
+                                        )
+                                    }
+                                    updateInfo = null
+                                }
+                            ) {
+                                Text("Download latest version")
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { updateInfo = null }) {
+                                Text("Later")
                             }
                         }
                     )
