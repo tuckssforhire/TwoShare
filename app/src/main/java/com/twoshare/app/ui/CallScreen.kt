@@ -100,9 +100,9 @@ fun CallScreen(
                     repository.endCall(initialCall.id)
                 }
             } catch (_: CancellationException) {
-                // Normal when the call screen is leaving composition.
+                // Normal when the TwoLink screen is leaving composition.
             } catch (_: Throwable) {
-                // Leaving the call screen should not be blocked by a backend cleanup failure.
+                // Leaving TwoLink should not be blocked by a backend cleanup failure.
             }
             finishScreen()
         }
@@ -122,9 +122,9 @@ fun CallScreen(
         }
         if (!hasPermissions) {
             error = if (initialCall.isVideo) {
-                "Microphone, camera and Nearby devices permission are required for calling."
+                "Microphone, camera and Nearby devices permission are required for TwoLink."
             } else {
-                "Microphone and Nearby devices permission are required for calling."
+                "Microphone and Nearby devices permission are required for TwoLink."
             }
         }
     }
@@ -166,7 +166,7 @@ fun CallScreen(
                                 throw cancel
                             } catch (t: Throwable) {
                                 if (!finished) {
-                                    error = "Unable to send call setup: ${t.localizedMessage ?: "unknown error"}"
+                                    error = "Unable to send TwoLink setup: ${t.localizedMessage ?: "unknown error"}"
                                 }
                             }
                         }
@@ -203,8 +203,8 @@ fun CallScreen(
 
             val rtc = rtcResult.getOrNull()
             if (rtc == null) {
-                error = "Unable to initialize calling on this phone: ${rtcResult.exceptionOrNull()?.localizedMessage ?: "WebRTC startup failed"}"
-                callState = "Call unavailable"
+                error = "Unable to initialize TwoLink on this phone: ${rtcResult.exceptionOrNull()?.localizedMessage ?: "WebRTC startup failed"}"
+                callState = "Unavailable"
                 onDispose { }
             } else {
                 manager = rtc
@@ -375,11 +375,14 @@ fun CallScreen(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
-                if (initialCall.isVideo) "Video call" else "Voice call",
+                "TwoLink",
                 color = Color.White,
                 style = MaterialTheme.typography.titleLarge
             )
-            Text(callState, color = Color.White.copy(alpha = 0.8f))
+            Text(
+                "${if (initialCall.isVideo) "Video" else "Voice"} • $callState",
+                color = Color.White.copy(alpha = 0.8f)
+            )
             error?.let {
                 Spacer(Modifier.height(8.dp))
                 Text(
@@ -395,7 +398,7 @@ fun CallScreen(
                 onClick = { permissionLauncher.launch(requiredPermissions.toTypedArray()) },
                 modifier = Modifier.align(Alignment.Center)
             ) {
-                Text("Grant call permissions")
+                Text("Grant TwoLink permissions")
             }
         }
 
@@ -453,7 +456,7 @@ fun CallScreen(
 
                 CompactCallControl(
                     icon = Icons.Default.CallEnd,
-                    contentDescription = "End call",
+                    contentDescription = "End TwoLink",
                     enabled = !endingCall,
                     destructive = true,
                     larger = true,
