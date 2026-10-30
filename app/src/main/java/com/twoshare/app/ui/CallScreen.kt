@@ -48,11 +48,11 @@ fun CallScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val localRenderer = remember { SurfaceViewRenderer(context) }
-    val remoteRenderer = remember { SurfaceViewRenderer(context) }
-    val appliedRemoteCandidateIds = remember { mutableSetOf<String>() }
+    val localRenderer = remember(initialCall.id) { SurfaceViewRenderer(context) }
+    val remoteRenderer = remember(initialCall.id) { SurfaceViewRenderer(context) }
+    val appliedRemoteCandidateIds = remember(initialCall.id) { mutableSetOf<String>() }
 
-    val requiredPermissions = remember(initialCall.isVideo) {
+    val requiredPermissions = remember(initialCall.id, initialCall.isVideo) {
         buildList {
             add(Manifest.permission.RECORD_AUDIO)
             if (initialCall.isVideo) add(Manifest.permission.CAMERA)
@@ -66,21 +66,21 @@ fun CallScreen(
         ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
     }
 
-    var hasPermissions by remember { mutableStateOf(permissionsGranted()) }
-    var permissionRequested by remember { mutableStateOf(false) }
-    var manager by remember { mutableStateOf<WebRtcCallManager?>(null) }
-    var latestCall by remember { mutableStateOf(initialCall) }
-    var partnerName by remember { mutableStateOf("TwoShare") }
-    var callState by remember { mutableStateOf(if (incoming) "Answering…" else "Ringing…") }
-    var error by remember { mutableStateOf<String?>(null) }
-    var muted by remember { mutableStateOf(false) }
-    var cameraOn by remember { mutableStateOf(initialCall.isVideo) }
-    var speakerOn by remember { mutableStateOf(initialCall.isVideo) }
-    var offerStarted by remember { mutableStateOf(false) }
-    var answerStarted by remember { mutableStateOf(false) }
-    var answerApplied by remember { mutableStateOf(false) }
-    var finished by remember { mutableStateOf(false) }
-    var endingCall by remember { mutableStateOf(false) }
+    var hasPermissions by remember(initialCall.id) { mutableStateOf(permissionsGranted()) }
+    var permissionRequested by remember(initialCall.id) { mutableStateOf(false) }
+    var manager by remember(initialCall.id) { mutableStateOf<WebRtcCallManager?>(null) }
+    var latestCall by remember(initialCall.id) { mutableStateOf(initialCall) }
+    var partnerName by remember(initialCall.id) { mutableStateOf("TwoShare") }
+    var callState by remember(initialCall.id) { mutableStateOf(if (incoming) "Answering…" else "Ringing…") }
+    var error by remember(initialCall.id) { mutableStateOf<String?>(null) }
+    var muted by remember(initialCall.id) { mutableStateOf(false) }
+    var cameraOn by remember(initialCall.id) { mutableStateOf(initialCall.isVideo) }
+    var speakerOn by remember(initialCall.id) { mutableStateOf(initialCall.isVideo) }
+    var offerStarted by remember(initialCall.id) { mutableStateOf(false) }
+    var answerStarted by remember(initialCall.id) { mutableStateOf(false) }
+    var answerApplied by remember(initialCall.id) { mutableStateOf(false) }
+    var finished by remember(initialCall.id) { mutableStateOf(false) }
+    var endingCall by remember(initialCall.id) { mutableStateOf(false) }
 
     fun finishScreen() {
         if (!finished) {
@@ -129,7 +129,7 @@ fun CallScreen(
         }
     }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(initialCall.id) {
         partnerName = try {
             repository.partnerName(initialCall)
         } catch (cancel: CancellationException) {
@@ -142,7 +142,7 @@ fun CallScreen(
         }
     }
 
-    DisposableEffect(hasPermissions) {
+    DisposableEffect(initialCall.id, hasPermissions) {
         if (!hasPermissions) {
             onDispose { }
         } else {
@@ -217,7 +217,7 @@ fun CallScreen(
         }
     }
 
-    LaunchedEffect(manager, incoming) {
+    LaunchedEffect(initialCall.id, manager, incoming) {
         val rtc = manager ?: return@LaunchedEffect
         if (!incoming && !offerStarted) {
             offerStarted = true
@@ -225,7 +225,7 @@ fun CallScreen(
         }
     }
 
-    LaunchedEffect(manager, incoming, hasPermissions) {
+    LaunchedEffect(initialCall.id, manager, incoming, hasPermissions) {
         val rtc = manager ?: return@LaunchedEffect
         if (!incoming || !hasPermissions || answerStarted) return@LaunchedEffect
 
@@ -258,7 +258,7 @@ fun CallScreen(
         }
     }
 
-    LaunchedEffect(manager) {
+    LaunchedEffect(initialCall.id, manager) {
         val rtc = manager ?: return@LaunchedEffect
         while (isActive && !finished) {
             try {
@@ -283,7 +283,7 @@ fun CallScreen(
         }
     }
 
-    LaunchedEffect(manager, incoming) {
+    LaunchedEffect(initialCall.id, manager, incoming) {
         val rtc = manager ?: return@LaunchedEffect
         while (isActive && !finished) {
             val fresh = try {
