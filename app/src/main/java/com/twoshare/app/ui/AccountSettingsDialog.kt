@@ -21,12 +21,13 @@ fun AccountSettingsDialog(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    var currentPassword by remember { mutableStateOf("") }
     var newPassword by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
+    var verificationCode by remember { mutableStateOf("") }
+    var verificationSent by remember { mutableStateOf(false) }
     var biometricEnabled by remember { mutableStateOf(authManager.isBiometricEnabled(context)) }
     val biometricAvailable = remember { authManager.canUseBiometrics(context) }
-    var savingPassword by remember { mutableStateOf(false) }
+    var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
 
@@ -39,15 +40,9 @@ fun AccountSettingsDialog(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Text("Change password", style = MaterialTheme.typography.titleMedium)
-
-                OutlinedTextField(
-                    value = currentPassword,
-                    onValueChange = { currentPassword = it; error = null; message = null },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Current password") },
-                    singleLine = true,
-                    visualTransformation = PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
+                Text(
+                    "For security, TwoShare will verify your account by email before changing the password.",
+                    style = MaterialTheme.typography.bodySmall
                 )
 
                 OutlinedTextField(
@@ -70,41 +65,107 @@ fun AccountSettingsDialog(
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
                 )
 
-                Button(
-                    onClick = {
-                        scope.launch {
-                            savingPassword = true
-                            error = null
-                            message = null
-                            runCatching {
-                                require(newPassword == confirmPassword) { "New passwords do not match." }
-                                authManager.changePassword(currentPassword, newPassword)
-                            }.onSuccess {
-                                currentPassword = ""
-                                newPassword = ""
-                                confirmPassword = ""
-                                message = "Password changed."
-                            }.onFailure {
-                                val raw = it.localizedMessage.orEmpty()
-                                error = when {
-                                    "invalid" in raw.lowercase() && "password" in raw.lowercase() ->
-                                        "Current password is incorrect."
-                                    raw.isBlank() -> "Unable to change password."
-                                    else -> raw.lineSequence().firstOrNull()?.take(160)
-                                        ?: "Unable to change password."
+                if (!verificationSent) {
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                busy = true
+                                error = null
+                                message = null
+                                runCatching {
+                                    require(newPassword.length >= 8) {
+                                        "New password must be at least 8 characters."
+                                    }
+                                    require(newPassword == confirmPassword) {
+                                        "New passwords do not match."
+                                    }
+                                    authManager.startPasswordChangeVerification()
+                                }.onSuccess {
+                                    verificationSent = true
+                                    message = "Verification code sent to your email."
+                                }.onFailure {
+                                    val raw = it.localizedMessage.orEmpty()
+                                    error = raw.lineSequence().firstOrNull()?.take(180)
+                                        ?.takeIf { text -> text.isNotBlank() }
+                                        ?: "Unable to send verification code."
                                 }
+                                busy = false
                             }
-                            savingPassword = false
+                        },
+                        enabled = !busy && newPassword.length >= 8 && confirmPassword.isNotBlank(),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        if (busy) {
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        } else {
+                            Text("Send verification code")
                         }
-                    },
-                    enabled = !savingPassword && currentPassword.isNotBlank() &&
-                        newPassword.length >= 8 && confirmPassword.isNotBlank(),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    if (savingPassword) {
-                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                    } else {
-                        Text("Change password")
+                    }
+                } else {
+                    OutlinedTextField(
+                        value = verificationCode,
+                        onValueChange = { verificationCode = it.filter(Char::isDigit).take(8); error = null; message = null },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Email verification code") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword)
+                    )
+
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                busy = true
+                                error = null
+                                message = null
+                                runCatching {
+                                    require(newPassword == confirmPassword) {
+                                        "New passwords do not match."
+                                    }
+                                    authManager.verifyAndChangePassword(verificationCode, newPassword)
+                                }.onSuccess {
+                                    newPassword = ""
+                                    confirmPassword = ""
+                                    verificationCode = ""
+                                    verificationSent = false
+                                    message = "Password changed successfully."
+                                }.onFailure {
+                                    val raw = it.localizedMessage.orEmpty()
+                                    error = when {
+                                        "expired" in raw.lowercase() -> "The verification code expired. Send a new code and try again."
+                                        "invalid" in raw.lowercase() || "otp" in raw.lowercase() -> "The verification code is incorrect or expired."
+                                        raw.isBlank() -> "Unable to change password."
+                                        else -> raw.lineSequence().firstOrNull()?.take(180)
+                                            ?: "Unable to change password."
+                                    }
+                                }
+                                busy = false
+                            }
+                        },
+                        enabled = !busy && verificationCode.isNotBlank(),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        if (busy) {
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        } else {
+                            Text("Verify & change password")
+                        }
+                    }
+
+                    TextButton(
+                        onClick = {
+                            scope.launch {
+                                busy = true
+                                error = null
+                                message = null
+                                runCatching { authManager.startPasswordChangeVerification() }
+                                    .onSuccess { message = "A new verification code was sent." }
+                                    .onFailure { error = "Unable to resend verification code." }
+                                busy = false
+                            }
+                        },
+                        enabled = !busy
+                    ) {
+                        Text("Resend code")
                     }
                 }
 
