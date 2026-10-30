@@ -77,10 +77,15 @@ fun CallScreen(
     var cameraOn by remember(initialCall.id) { mutableStateOf(initialCall.isVideo) }
     var speakerOn by remember(initialCall.id) { mutableStateOf(initialCall.isVideo) }
     var offerStarted by remember(initialCall.id) { mutableStateOf(false) }
-    var answerStarted by remember(initialCall.id) { mutableStateOf(false) }
-    var answerApplied by remember(initialCall.id) { mutableStateOf(false) }
+    var lastHandledOfferSdp by remember(initialCall.id) { mutableStateOf<String?>(null) }
+    var lastAppliedAnswerSdp by remember(initialCall.id) { mutableStateOf<String?>(null) }
+    var initialAnswerPublished by remember(initialCall.id) { mutableStateOf(initialCall.answeredAt != null) }
     var finished by remember(initialCall.id) { mutableStateOf(false) }
     var endingCall by remember(initialCall.id) { mutableStateOf(false) }
+
+    fun friendlyNetworkFailure(throwable: Throwable, fallback: String): String? {
+        return if (repository.isTransientNetworkError(throwable)) null else fallback
+    }
 
     fun finishScreen() {
         if (!finished) {
@@ -150,23 +155,39 @@ fun CallScreen(
                 WebRtcCallManager(
                     context = context,
                     videoEnabledForCall = initialCall.isVideo,
+                    initiator = !incoming,
                     localRenderer = localRenderer,
                     remoteRenderer = remoteRenderer,
                     onLocalSdpReady = { sdp ->
                         scope.launch {
                             try {
                                 if (incoming) {
-                                    repository.acceptCall(initialCall.id, sdp)
+                                    if (!initialAnswerPublished) {
+                                        repository.acceptCall(initialCall.id, sdp)
+                                        initialAnswerPublished = true
+                                    } else {
+                                        repository.setCallAnswer(initialCall.id, sdp)
+                                    }
                                     callState = "Connecting…"
                                 } else {
                                     repository.setCallOffer(initialCall.id, sdp)
-                                    callState = "Ringing…"
+                                    callState = if (latestCall.answeredAt == null) {
+                                        "Ringing…"
+                                    } else {
+                                        "Reconnecting…"
+                                    }
                                 }
+                                error = null
                             } catch (cancel: CancellationException) {
                                 throw cancel
                             } catch (t: Throwable) {
                                 if (!finished) {
-                                    error = "Unable to send TwoLink setup: ${t.localizedMessage ?: "unknown error"}"
+                                    if (repository.isTransientNetworkError(t)) {
+                                        callState = "Reconnecting…"
+                                        error = null
+                                    } else {
+                                        error = "Unable to update TwoLink connection."
+                                    }
                                 }
                             }
                         }
@@ -184,14 +205,19 @@ fun CallScreen(
                                 throw cancel
                             } catch (t: Throwable) {
                                 if (!finished && callState != "Connected") {
-                                    error = "Unable to send network candidate: ${t.localizedMessage ?: "unknown error"}"
+                                    if (repository.isTransientNetworkError(t)) {
+                                        callState = "Reconnecting…"
+                                        error = null
+                                    } else {
+                                        error = "Unable to update TwoLink network path."
+                                    }
                                 }
                             }
                         }
                     },
                     onConnectionState = { state ->
                         callState = state
-                        if (state == "Connected") {
+                        if (state == "Connected" || state.startsWith("Reconnecting")) {
                             error = null
                         }
                     },
@@ -225,36 +251,58 @@ fun CallScreen(
         }
     }
 
+    // Poll the shared call row for both initial signaling and later ICE-restart renegotiation.
+    // A changed offer/answer SDP is handled once, allowing the same TwoLink session to recover
+    // when either phone moves between Wi-Fi and mobile data.
     LaunchedEffect(initialCall.id, manager, incoming, hasPermissions) {
         val rtc = manager ?: return@LaunchedEffect
-        if (!incoming || !hasPermissions || answerStarted) return@LaunchedEffect
+        if (!hasPermissions) return@LaunchedEffect
 
-        while (isActive && !answerStarted) {
+        while (isActive && !finished) {
             val fresh = try {
                 repository.getCall(initialCall.id)
             } catch (cancel: CancellationException) {
                 throw cancel
-            } catch (_: Throwable) {
+            } catch (t: Throwable) {
+                if (repository.isTransientNetworkError(t)) {
+                    callState = "Reconnecting…"
+                    error = null
+                }
                 null
             }
-            if (fresh == null) {
-                delay(500)
-                continue
-            }
-            latestCall = fresh
-            when (fresh.status) {
-                "cancelled", "ended" -> {
-                    finishScreen()
-                    return@LaunchedEffect
+
+            if (fresh != null) {
+                latestCall = fresh
+
+                when (fresh.status) {
+                    "rejected" -> {
+                        callState = "Declined"
+                        delay(500)
+                        finishScreen()
+                        return@LaunchedEffect
+                    }
+                    "cancelled", "ended" -> {
+                        finishScreen()
+                        return@LaunchedEffect
+                    }
+                }
+
+                if (incoming) {
+                    val offer = fresh.offerSdp
+                    if (!offer.isNullOrBlank() && offer != lastHandledOfferSdp) {
+                        lastHandledOfferSdp = offer
+                        callState = if (initialAnswerPublished) "Reconnecting…" else "Answering…"
+                        rtc.startCallee(offer)
+                    }
+                } else {
+                    val answer = fresh.answerSdp
+                    if (!answer.isNullOrBlank() && answer != lastAppliedAnswerSdp) {
+                        lastAppliedAnswerSdp = answer
+                        rtc.applyAnswer(answer)
+                    }
                 }
             }
-            val offer = fresh.offerSdp
-            if (!offer.isNullOrBlank()) {
-                answerStarted = true
-                rtc.startCallee(offer)
-                break
-            }
-            delay(400)
+            delay(450)
         }
     }
 
@@ -276,44 +324,17 @@ fun CallScreen(
                 throw cancel
             } catch (t: Throwable) {
                 if (!finished && callState != "Connected") {
-                    error = "Unable to receive network candidate: ${t.localizedMessage ?: "unknown error"}"
+                    if (repository.isTransientNetworkError(t)) {
+                        callState = "Reconnecting…"
+                        error = null
+                    } else {
+                        friendlyNetworkFailure(t, "Unable to update TwoLink network path.")?.let {
+                            error = it
+                        }
+                    }
                 }
             }
             delay(400)
-        }
-    }
-
-    LaunchedEffect(initialCall.id, manager, incoming) {
-        val rtc = manager ?: return@LaunchedEffect
-        while (isActive && !finished) {
-            val fresh = try {
-                repository.getCall(initialCall.id)
-            } catch (cancel: CancellationException) {
-                throw cancel
-            } catch (_: Throwable) {
-                null
-            }
-            if (fresh != null) {
-                latestCall = fresh
-                if (!incoming && !answerApplied && !fresh.answerSdp.isNullOrBlank()) {
-                    answerApplied = true
-                    rtc.applyAnswer(fresh.answerSdp)
-                    callState = "Connecting…"
-                }
-                when (fresh.status) {
-                    "rejected" -> {
-                        callState = "Declined"
-                        delay(500)
-                        finishScreen()
-                        return@LaunchedEffect
-                    }
-                    "cancelled", "ended" -> {
-                        finishScreen()
-                        return@LaunchedEffect
-                    }
-                }
-            }
-            delay(500)
         }
     }
 
