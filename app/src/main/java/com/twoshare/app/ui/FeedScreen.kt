@@ -25,6 +25,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
 import com.twoshare.app.R
+import com.twoshare.app.data.AuthManager
 import com.twoshare.app.data.TwoShareRepository
 import com.twoshare.app.model.FeedPost
 import kotlinx.coroutines.delay
@@ -36,6 +37,7 @@ import java.time.OffsetDateTime
 @Composable
 fun FeedScreen(
     repository: TwoShareRepository,
+    authManager: AuthManager,
     onOpenMessenger: () -> Unit,
     onSignedOut: () -> Unit
 ) {
@@ -49,6 +51,7 @@ fun FeedScreen(
     var commentsPost by remember { mutableStateOf<FeedPost?>(null) }
     var viewerPost by remember { mutableStateOf<FeedPost?>(null) }
     var viewerIndex by remember { mutableStateOf(0) }
+    var showAccountSettings by remember { mutableStateOf(false) }
 
     suspend fun refresh() {
         runCatching { repository.loadFeed() }
@@ -116,8 +119,8 @@ fun FeedScreen(
                     TextButton(onClick = onOpenMessenger) {
                         Text("Chat")
                     }
-                    TextButton(onClick = { scope.launch { refresh() } }) {
-                        Text("Refresh")
+                    TextButton(onClick = { showAccountSettings = true }) {
+                        Text("Account")
                     }
                     TextButton(onClick = {
                         scope.launch {
@@ -196,6 +199,13 @@ fun FeedScreen(
                 }
             }
         }
+    }
+
+    if (showAccountSettings) {
+        AccountSettingsDialog(
+            authManager = authManager,
+            onDismiss = { showAccountSettings = false }
+        )
     }
 
     commentsPost?.let { post ->
