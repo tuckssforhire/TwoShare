@@ -17,11 +17,6 @@ import com.twoshare.app.data.AuthManager
 import com.twoshare.app.data.PasswordSignInResult
 import kotlinx.coroutines.launch
 
-private enum class VerificationMode {
-    NEW_DEVICE,
-    SET_PASSWORD
-}
-
 @Composable
 fun LoginScreen(
     authManager: AuthManager,
@@ -32,7 +27,7 @@ fun LoginScreen(
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var code by remember { mutableStateOf("") }
-    var verificationMode by remember { mutableStateOf<VerificationMode?>(null) }
+    var verifyingEmail by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var info by remember { mutableStateOf<String?>(null) }
@@ -68,26 +63,26 @@ fun LoginScreen(
                     modifier = Modifier.fillMaxWidth(),
                     label = { Text("Email") },
                     singleLine = true,
-                    enabled = verificationMode == null && !loading,
+                    enabled = !verifyingEmail && !loading,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email)
                 )
 
-                Spacer(Modifier.height(12.dp))
-                OutlinedTextField(
-                    value = password,
-                    onValueChange = {
-                        password = it
-                        error = null
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Password") },
-                    singleLine = true,
-                    enabled = verificationMode == null && !loading,
-                    visualTransformation = PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
-                )
-
-                if (verificationMode != null) {
+                if (!verifyingEmail) {
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = password,
+                        onValueChange = {
+                            password = it
+                            error = null
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Password") },
+                        singleLine = true,
+                        enabled = !loading,
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
+                    )
+                } else {
                     Spacer(Modifier.height(12.dp))
                     OutlinedTextField(
                         value = code,
@@ -115,7 +110,7 @@ fun LoginScreen(
 
                 Spacer(Modifier.height(20.dp))
 
-                if (verificationMode == null) {
+                if (!verifyingEmail) {
                     Button(
                         onClick = {
                             scope.launch {
@@ -132,8 +127,9 @@ fun LoginScreen(
                                     when (result) {
                                         PasswordSignInResult.TRUSTED_DEVICE -> onSignedIn()
                                         PasswordSignInResult.EMAIL_CODE_REQUIRED -> {
-                                            verificationMode = VerificationMode.NEW_DEVICE
-                                            info = "New device detected. Enter the code sent to your email. After verification, this phone will be trusted."
+                                            verifyingEmail = true
+                                            code = ""
+                                            info = "New device detected. Enter the code sent to your email. No password change is required."
                                         }
                                     }
                                 }.onFailure {
@@ -165,9 +161,9 @@ fun LoginScreen(
                                 runCatching {
                                     authManager.startEmailCodeSignIn(email)
                                 }.onSuccess {
-                                    verificationMode = VerificationMode.NEW_DEVICE
+                                    verifyingEmail = true
                                     code = ""
-                                    info = "We sent a sign-in code to your email. Enter it below to sign in and trust this phone."
+                                    info = "We sent a sign-in code to your email. Verify it to sign in and trust this phone."
                                 }.onFailure {
                                     error = friendlyAuthError(it)
                                 }
@@ -179,58 +175,18 @@ fun LoginScreen(
                     ) {
                         Text("Sign in with email code")
                     }
-
-                    Spacer(Modifier.height(6.dp))
-                    TextButton(
-                        onClick = {
-                            scope.launch {
-                                loading = true
-                                error = null
-                                info = null
-                                runCatching {
-                                    require(password.length >= 6) {
-                                        "Type the new password you want to use first."
-                                    }
-                                    authManager.startPasswordSetup(email)
-                                }.onSuccess {
-                                    verificationMode = VerificationMode.SET_PASSWORD
-                                    code = ""
-                                    info = "Enter the email code to save this new password and trust this phone."
-                                }.onFailure {
-                                    error = friendlyAuthError(it)
-                                }
-                                loading = false
-                            }
-                        },
-                        enabled = !loading && email.isNotBlank() && password.length >= 6
-                    ) {
-                        Text("Set / reset password with email code")
-                    }
                 } else {
                     Button(
                         onClick = {
-                            val mode = verificationMode ?: return@Button
                             scope.launch {
                                 loading = true
                                 error = null
                                 runCatching {
-                                    when (mode) {
-                                        VerificationMode.NEW_DEVICE -> {
-                                            authManager.verifyNewDevice(
-                                                context = context,
-                                                email = email,
-                                                code = code
-                                            )
-                                        }
-                                        VerificationMode.SET_PASSWORD -> {
-                                            authManager.verifyAndSetPassword(
-                                                context = context,
-                                                email = email,
-                                                code = code,
-                                                newPassword = password
-                                            )
-                                        }
-                                    }
+                                    authManager.verifyNewDevice(
+                                        context = context,
+                                        email = email,
+                                        code = code
+                                    )
                                 }.onSuccess {
                                     onSignedIn()
                                 }.onFailure {
@@ -255,7 +211,7 @@ fun LoginScreen(
                     Spacer(Modifier.height(8.dp))
                     TextButton(
                         onClick = {
-                            verificationMode = null
+                            verifyingEmail = false
                             code = ""
                             info = null
                             error = null
@@ -275,7 +231,7 @@ private fun friendlyAuthError(throwable: Throwable): String {
     val lower = raw.lowercase()
     return when {
         "invalid_credentials" in lower || "invalid login credentials" in lower ->
-            "Incorrect email or password. Try again, sign in with an email code, or reset your password."
+            "Incorrect email or password. Try again or sign in with an email code."
 
         "rate limit" in lower || "over_email_send_rate_limit" in lower ->
             "Too many email requests. Please try again shortly."
