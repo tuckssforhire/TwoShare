@@ -16,6 +16,7 @@ data class PostRow(
     @SerialName("user_id") val userId: String,
     @SerialName("image_path") val imagePath: String,
     @SerialName("image_paths") val imagePaths: List<String> = emptyList(),
+    val caption: String? = null,
     @SerialName("created_at") val createdAt: String
 )
 
@@ -38,7 +39,8 @@ data class CommentRow(
 data class PostInsert(
     @SerialName("user_id") val userId: String,
     @SerialName("image_path") val imagePath: String,
-    @SerialName("image_paths") val imagePaths: List<String>
+    @SerialName("image_paths") val imagePaths: List<String>,
+    val caption: String? = null
 )
 
 @Serializable
@@ -116,6 +118,7 @@ data class FeedPost(
     val userName: String,
     val imagePaths: List<String>,
     val imageUrls: List<String>,
+    val caption: String?,
     val createdAt: String,
     val likedBy: Set<String>
 ) {
