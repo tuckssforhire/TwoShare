@@ -82,17 +82,32 @@ class AuthManager {
         markDeviceTrusted(context, profile.id)
     }
 
-    suspend fun changePassword(currentPassword: String, newPassword: String) {
-        require(currentUserId() != null) { "You must be signed in to change your password." }
-        require(currentPassword.isNotBlank()) { "Enter your current password." }
+    suspend fun startPasswordChangeVerification() {
+        val email = currentEmail()
+            ?: error("You must be signed in to change your password.")
+        sendOtp(normalizeEmail(email))
+    }
+
+    suspend fun verifyAndChangePassword(code: String, newPassword: String) {
+        val email = currentEmail()
+            ?: error("You must be signed in to change your password.")
         require(newPassword.length >= 8) { "New password must be at least 8 characters." }
-        require(currentPassword != newPassword) { "Choose a different new password." }
+        val cleanedCode = code.trim()
+        require(cleanedCode.isNotEmpty()) { "Enter the verification code from your email." }
+
+        supabase.auth.verifyEmailOtp(
+            type = OtpType.Email.EMAIL,
+            email = normalizeEmail(email),
+            token = cleanedCode
+        )
+        requireAllowedUser()
 
         supabase.auth.updateUser {
             password = newPassword
-            this.currentPassword = currentPassword
         }
     }
+
+    fun currentEmail(): String? = supabase.auth.currentUserOrNull()?.email
 
     fun canUseBiometrics(context: Context): Boolean {
         return BiometricManager.from(context).canAuthenticate(
