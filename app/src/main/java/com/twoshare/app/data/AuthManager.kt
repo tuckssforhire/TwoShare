@@ -56,13 +56,11 @@ class AuthManager {
         }
 
         val profile = requireAllowedUser()
-        if (isDeviceTrusted(context, profile.id)) {
-            return PasswordSignInResult.TRUSTED_DEVICE
-        }
-
-        supabase.auth.signOut()
-        sendOtp(normalized)
-        return PasswordSignInResult.EMAIL_CODE_REQUIRED
+        // A successful Supabase password sign-in proves the password is valid.
+        // Trust this phone immediately instead of signing the valid session out and
+        // forcing an email OTP, which previously made correct passwords appear broken.
+        markDeviceTrusted(context, profile.id)
+        return PasswordSignInResult.TRUSTED_DEVICE
     }
 
     suspend fun startEmailCodeSignIn(email: String) {
@@ -84,8 +82,6 @@ class AuthManager {
 
     suspend fun startPasswordChangeVerification() {
         require(currentUserId() != null) { "You must be signed in to change your password." }
-        // Supabase's dedicated reauthentication flow sends a nonce to the signed-in user's
-        // confirmed email without replacing the current app session with a new OTP sign-in flow.
         supabase.auth.reauthenticate()
     }
 
@@ -95,13 +91,30 @@ class AuthManager {
         val cleanedCode = code.trim()
         require(cleanedCode.isNotEmpty()) { "Enter the verification code from your email." }
 
-        // The code from reauthenticate() is a nonce for updateUser(), not a normal sign-in OTP.
-        // Keeping it in the update request preserves the current session while proving email access.
         supabase.auth.updateUser {
             password = newPassword
             nonce = cleanedCode
         }
         requireAllowedUser()
+    }
+
+    suspend fun currentProfile(): ProfileRow = requireAllowedUser()
+
+    suspend fun updateDisplayName(displayName: String): ProfileRow {
+        val userId = currentUserId() ?: error("You must be signed in to change your display name.")
+        val cleaned = displayName.trim()
+        require(cleaned.isNotEmpty()) { "Display name cannot be blank." }
+        require(cleaned.length <= 60) { "Display name must be 60 characters or fewer." }
+        requireAllowedUser()
+
+        val updated = supabase.from("profiles").update({
+            set("display_name", cleaned)
+        }) {
+            select()
+            filter { eq("id", userId) }
+        }.decodeList<ProfileRow>()
+
+        return updated.singleOrNull() ?: error("Unable to update display name.")
     }
 
     fun currentEmail(): String? = supabase.auth.currentUserOrNull()?.email
