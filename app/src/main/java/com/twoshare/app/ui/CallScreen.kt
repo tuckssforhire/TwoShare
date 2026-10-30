@@ -23,6 +23,7 @@ import com.twoshare.app.data.TwoShareRepository
 import com.twoshare.app.data.loadRemoteIceCandidates
 import com.twoshare.app.data.publishIceCandidate
 import com.twoshare.app.model.CallRow
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -82,12 +83,16 @@ fun CallScreen(
         if (endingCall || finished) return
         endingCall = true
         scope.launch {
-            runCatching {
+            try {
                 if (!incoming && latestCall.status == "ringing") {
                     repository.cancelCall(initialCall.id)
                 } else {
                     repository.endCall(initialCall.id)
                 }
+            } catch (_: CancellationException) {
+                // Normal when the call screen is leaving composition.
+            } catch (_: Throwable) {
+                // Leaving the call screen should not be blocked by a backend cleanup failure.
             }
             finishScreen()
         }
@@ -115,7 +120,13 @@ fun CallScreen(
     }
 
     LaunchedEffect(Unit) {
-        partnerName = runCatching { repository.partnerName(initialCall) }.getOrDefault("TwoShare")
+        partnerName = try {
+            repository.partnerName(initialCall)
+        } catch (cancel: CancellationException) {
+            throw cancel
+        } catch (_: Throwable) {
+            "TwoShare"
+        }
         if (!hasPermissions && !permissionRequested) {
             permissionLauncher.launch(requiredPermissions.toTypedArray())
         }
@@ -133,7 +144,7 @@ fun CallScreen(
                     remoteRenderer = remoteRenderer,
                     onLocalSdpReady = { sdp ->
                         scope.launch {
-                            runCatching {
+                            try {
                                 if (incoming) {
                                     repository.acceptCall(initialCall.id, sdp)
                                     callState = "Connecting…"
@@ -141,27 +152,42 @@ fun CallScreen(
                                     repository.setCallOffer(initialCall.id, sdp)
                                     callState = "Ringing…"
                                 }
-                            }.onFailure {
-                                error = "Unable to send call setup: ${it.localizedMessage ?: "unknown error"}"
+                            } catch (cancel: CancellationException) {
+                                throw cancel
+                            } catch (t: Throwable) {
+                                if (!finished) {
+                                    error = "Unable to send call setup: ${t.localizedMessage ?: "unknown error"}"
+                                }
                             }
                         }
                     },
                     onLocalIceCandidate = { candidate ->
                         scope.launch {
-                            runCatching {
+                            try {
                                 repository.publishIceCandidate(
                                     callId = initialCall.id,
                                     sdpMid = candidate.sdpMid,
                                     sdpMLineIndex = candidate.sdpMLineIndex,
                                     candidate = candidate.sdp
                                 )
-                            }.onFailure {
-                                error = "Unable to send network candidate: ${it.localizedMessage ?: "unknown error"}"
+                            } catch (cancel: CancellationException) {
+                                throw cancel
+                            } catch (t: Throwable) {
+                                if (!finished && callState != "Connected") {
+                                    error = "Unable to send network candidate: ${t.localizedMessage ?: "unknown error"}"
+                                }
                             }
                         }
                     },
-                    onConnectionState = { state -> callState = state },
-                    onError = { message -> error = message }
+                    onConnectionState = { state ->
+                        callState = state
+                        if (state == "Connected") {
+                            error = null
+                        }
+                    },
+                    onError = { message ->
+                        if (!finished) error = message
+                    }
                 )
             }
 
@@ -194,7 +220,13 @@ fun CallScreen(
         if (!incoming || !hasPermissions || answerStarted) return@LaunchedEffect
 
         while (isActive && !answerStarted) {
-            val fresh = runCatching { repository.getCall(initialCall.id) }.getOrNull()
+            val fresh = try {
+                repository.getCall(initialCall.id)
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (_: Throwable) {
+                null
+            }
             if (fresh == null) {
                 delay(500)
                 continue
@@ -219,21 +251,24 @@ fun CallScreen(
     LaunchedEffect(manager) {
         val rtc = manager ?: return@LaunchedEffect
         while (isActive && !finished) {
-            runCatching { repository.loadRemoteIceCandidates(initialCall.id) }
-                .onSuccess { candidates ->
-                    candidates.forEach { candidate ->
-                        if (appliedRemoteCandidateIds.add(candidate.id)) {
-                            rtc.addRemoteIceCandidate(
-                                sdpMid = candidate.sdpMid,
-                                sdpMLineIndex = candidate.sdpMLineIndex,
-                                candidate = candidate.candidate
-                            )
-                        }
+            try {
+                val candidates = repository.loadRemoteIceCandidates(initialCall.id)
+                candidates.forEach { candidate ->
+                    if (appliedRemoteCandidateIds.add(candidate.id)) {
+                        rtc.addRemoteIceCandidate(
+                            sdpMid = candidate.sdpMid,
+                            sdpMLineIndex = candidate.sdpMLineIndex,
+                            candidate = candidate.candidate
+                        )
                     }
                 }
-                .onFailure {
-                    error = "Unable to receive network candidate: ${it.localizedMessage ?: "unknown error"}"
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (t: Throwable) {
+                if (!finished && callState != "Connected") {
+                    error = "Unable to receive network candidate: ${t.localizedMessage ?: "unknown error"}"
                 }
+            }
             delay(400)
         }
     }
@@ -241,7 +276,13 @@ fun CallScreen(
     LaunchedEffect(manager, incoming) {
         val rtc = manager ?: return@LaunchedEffect
         while (isActive && !finished) {
-            val fresh = runCatching { repository.getCall(initialCall.id) }.getOrNull()
+            val fresh = try {
+                repository.getCall(initialCall.id)
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (_: Throwable) {
+                null
+            }
             if (fresh != null) {
                 latestCall = fresh
                 if (!incoming && !answerApplied && !fresh.answerSdp.isNullOrBlank()) {
