@@ -21,7 +21,7 @@ class AuthManager {
 
     private val allowedEmails = setOf(
         "eddierodwards@gmail.com",
-        "urban.needs.ph@gmail.com"
+        "misamitchlailarene@gmail.com"
     )
 
     suspend fun restoreTrustedSession(context: Context): Boolean {
