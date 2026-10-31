@@ -62,43 +62,60 @@ class ChatFeaturesRepository(private val base: TwoShareRepository) {
 
     suspend fun loadMessages(): List<UiChatMessage> {
         base.requireAllowedUser()
+
+        // Messages are the only essential source. Optional Messenger enhancements must never
+        // make the whole chat screen unusable if a legacy row/table cannot be decoded.
         val rows = base.retryNetworkRead {
             supabase.from("messages").select { order("created_at", Order.ASCENDING) }.decodeList<ChatMessageRow>()
         }
-        val profiles = base.retryNetworkRead {
-            supabase.from("profiles").select().decodeList<ProfileRow>().associateBy { it.id }
-        }
-        val reactions = base.retryNetworkRead {
-            supabase.from("message_reactions").select().decodeList<MessageReactionRow>().groupBy { it.messageId }
-        }
-        val edits = base.retryNetworkRead {
-            supabase.from("message_edits").select { order("edited_at", Order.ASCENDING) }.decodeList<EditRow>().groupBy { it.messageId }
-        }
+
+        val profiles = runCatching {
+            base.retryNetworkRead {
+                supabase.from("profiles").select().decodeList<ProfileRow>().associateBy { it.id }
+            }
+        }.getOrDefault(emptyMap())
+
+        val reactions = runCatching {
+            base.retryNetworkRead {
+                supabase.from("message_reactions").select().decodeList<MessageReactionRow>().groupBy { it.messageId }
+            }
+        }.getOrDefault(emptyMap())
+
+        val edits = runCatching {
+            base.retryNetworkRead {
+                supabase.from("message_edits").select { order("edited_at", Order.ASCENDING) }.decodeList<EditRow>().groupBy { it.messageId }
+            }
+        }.getOrDefault(emptyMap())
+
         val byId = rows.associateBy { it.id }
         val bucket = supabase.storage.from("twoshare")
-        return rows.map { row ->
-            val mediaUrl = row.mediaPath?.let { path ->
-                urlCache[path] ?: base.retryNetworkRead { bucket.createSignedUrl(path, 24.hours) }.also { urlCache[path] = it }
-            }
-            val reply = row.replyToId?.let(byId::get)
-            UiChatMessage(
-                id = row.id,
-                senderId = row.senderId,
-                senderName = profiles[row.senderId]?.displayName ?: "User",
-                body = row.body,
-                mediaType = row.mediaType,
-                mediaUrl = mediaUrl,
-                createdAt = row.createdAt,
-                readAt = row.readAt,
-                reactions = reactions[row.id].orEmpty().groupBy { it.emoji }.mapValues { e -> e.value.map { it.userId }.toSet() },
-                clientId = row.clientId,
-                replyToId = row.replyToId,
-                replyPreview = reply?.body?.take(120) ?: if (reply?.mediaType != null) "${reply.mediaType} attachment" else null,
-                editedAt = row.editedAt,
-                deliveredAt = row.deliveredAt,
-                editHistory = edits[row.id].orEmpty().map { MessageEditVersion(it.oldBody.orEmpty(), it.editedAt) },
-                localState = "sent"
-            )
+        return rows.mapNotNull { row ->
+            runCatching {
+                val mediaUrl = row.mediaPath?.let { path ->
+                    urlCache[path] ?: runCatching {
+                        base.retryNetworkRead { bucket.createSignedUrl(path, 24.hours) }
+                    }.getOrNull()?.also { urlCache[path] = it }
+                }
+                val reply = row.replyToId?.let(byId::get)
+                UiChatMessage(
+                    id = row.id,
+                    senderId = row.senderId,
+                    senderName = profiles[row.senderId]?.displayName ?: if (row.senderId == base.currentUserId()) "You" else "User",
+                    body = row.body,
+                    mediaType = row.mediaType,
+                    mediaUrl = mediaUrl,
+                    createdAt = row.createdAt,
+                    readAt = row.readAt,
+                    reactions = reactions[row.id].orEmpty().groupBy { it.emoji }.mapValues { e -> e.value.map { it.userId }.toSet() },
+                    clientId = row.clientId,
+                    replyToId = row.replyToId,
+                    replyPreview = reply?.body?.take(120) ?: if (reply?.mediaType != null) "${reply.mediaType} attachment" else null,
+                    editedAt = row.editedAt,
+                    deliveredAt = row.deliveredAt,
+                    editHistory = edits[row.id].orEmpty().map { MessageEditVersion(it.oldBody.orEmpty(), it.editedAt) },
+                    localState = "sent"
+                )
+            }.getOrNull()
         }
     }
 
