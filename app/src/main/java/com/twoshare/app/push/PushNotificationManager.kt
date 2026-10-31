@@ -17,15 +17,19 @@ object PushNotificationManager {
         val user = SupabaseProvider.client.auth.currentUserOrNull() ?: return
         val token = FirebaseMessaging.getInstance().token.await()
         SupabaseProvider.client.from("device_push_tokens").upsert(
-            DevicePushTokenRow(user.id, token, deviceId(context)), onConflict = "user_id,device_id"
-        )
+            DevicePushTokenRow(user.id, token, deviceId(context))
+        ) {
+            onConflict = "user_id,device_id"
+        }
     }
 
     suspend fun registerToken(context: Context, token: String) {
         val user = SupabaseProvider.client.auth.currentUserOrNull() ?: return
         SupabaseProvider.client.from("device_push_tokens").upsert(
-            DevicePushTokenRow(user.id, token, deviceId(context)), onConflict = "user_id,device_id"
-        )
+            DevicePushTokenRow(user.id, token, deviceId(context))
+        ) {
+            onConflict = "user_id,device_id"
+        }
     }
 
     suspend fun unregisterCurrentDevice(context: Context) {
