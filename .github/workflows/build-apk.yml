@@ -13,13 +13,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Set up Java 17
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
-
       - name: Install Android SDK 36
         shell: bash
         run: |
@@ -27,18 +25,15 @@ jobs:
           export ANDROID_SDK_ROOT=/usr/local/lib/android/sdk
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;36.0.0" "platform-tools"
-
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.13'
-
       - name: Restore persistent TwoShare signing key
         uses: actions/cache@v4
         with:
           path: ~/.android/debug.keystore
           key: twoshare-debug-keystore-v1
-
       - name: Require exact TwoShare signing certificate
         shell: bash
         run: |
@@ -46,50 +41,26 @@ jobs:
             echo "::error::TwoShare signing keystore is missing. Refusing to generate a different certificate because that would break APK updates."
             exit 1
           fi
-
           EXPECTED_SHA256="F68AE9FE634515DB4143F64595CA6EB70B68CEC73A5615C7942C5D4CF65E6688"
-          ACTUAL_SHA256="$(keytool -list -v \
-            -keystore "$HOME/.android/debug.keystore" \
-            -storepass android \
-            -alias androiddebugkey 2>/dev/null \
-            | sed -n 's/^[[:space:]]*SHA256: //p' \
-            | head -n 1 \
-            | tr -d ':')"
-
-          if [ "$ACTUAL_SHA256" != "$EXPECTED_SHA256" ]; then
-            echo "::error::TwoShare signing certificate mismatch. Expected $EXPECTED_SHA256 but restored $ACTUAL_SHA256. Refusing to build an APK that cannot update the permanent-signing installation."
-            exit 1
-          fi
-
+          ACTUAL_SHA256="$(keytool -list -v -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey 2>/dev/null | sed -n 's/^[[:space:]]*SHA256: //p' | head -n 1 | tr -d ':')"
+          if [ "$ACTUAL_SHA256" != "$EXPECTED_SHA256" ]; then echo "::error::TwoShare signing certificate mismatch."; exit 1; fi
           echo "Verified permanent TwoShare signing certificate: $ACTUAL_SHA256"
-
       - name: Build release APK
         env:
           ANDROID_HOME: /usr/local/lib/android/sdk
           ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
         run: gradle :app:assembleRelease --stacktrace
-
       - name: Verify finished APK certificate
         shell: bash
         run: |
           EXPECTED_SHA256="F68AE9FE634515DB4143F64595CA6EB70B68CEC73A5615C7942C5D4CF65E6688"
           APK="app/build/outputs/apk/release/app-release.apk"
-          ACTUAL_APK_SHA256="$("$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "$APK" \
-            | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' \
-            | head -n 1 \
-            | tr '[:lower:]' '[:upper:]' \
-            | tr -d ':')"
-
-          if [ "$ACTUAL_APK_SHA256" != "$EXPECTED_SHA256" ]; then
-            echo "::error::Finished APK is signed by $ACTUAL_APK_SHA256 instead of permanent TwoShare certificate $EXPECTED_SHA256."
-            exit 1
-          fi
-
+          ACTUAL_APK_SHA256="$("$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "$APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1 | tr '[:lower:]' '[:upper:]' | tr -d ':')"
+          if [ "$ACTUAL_APK_SHA256" != "$EXPECTED_SHA256" ]; then echo "::error::Finished APK certificate mismatch."; exit 1; fi
           echo "Verified finished APK certificate: $ACTUAL_APK_SHA256"
-
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: TwoShare-v1.0.5-release-apk
+          name: TwoShare-v1.0.6-release-apk
           path: app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
