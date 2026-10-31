@@ -55,15 +55,42 @@ fun MessengerScreenV2(repository: TwoShareRepository, onBack: () -> Unit, onStar
     var editing by remember { mutableStateOf<UiChatMessage?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
 
+    val timeline = remember(messages, calls) {
+        (messages.map { Pair(epoch(it.createdAt), it as Any) } + calls.map { Pair(epoch(it.createdAt), it as Any) })
+            .sortedBy { it.first }
+    }
+
     suspend fun refresh() {
         runCatching { chat.markIncomingRead() }
         runCatching { chat.loadMessages() to repository.loadCallHistory() }.onSuccess { (server, history) ->
-            val pending = messages.filter { it.localState != "sent" }; val ids = server.mapNotNull { it.clientId }.toSet()
-            messages = server + pending.filter { it.clientId !in ids }; calls = history
+            val pending = messages.filter { it.localState != "sent" }
+            val ids = server.mapNotNull { it.clientId }.toSet()
+            messages = server + pending.filter { it.clientId !in ids }
+            calls = history
+            error = null
         }.onFailure { error = it.localizedMessage ?: "Unable to refresh chat." }
     }
-    LaunchedEffect(Unit) { refresh(); while (isActive) { delay(1500); refresh() } }
-    LaunchedEffect(messages.size, calls.size) { if (messages.isNotEmpty() || calls.isNotEmpty()) listState.animateScrollToItem((messages.size + calls.size - 1).coerceAtLeast(0)) }
+
+    LaunchedEffect(Unit) {
+        refresh()
+        while (isActive) {
+            delay(1500)
+            refresh()
+        }
+    }
+
+    // Wait until LazyColumn has actually measured the new items before scrolling.
+    // The previous implementation could request an index while the list still had 0 items,
+    // which can throw an IndexOutOfBoundsException as the chat screen opens.
+    LaunchedEffect(timeline.size) {
+        if (timeline.isNotEmpty()) {
+            delay(80)
+            val measuredCount = listState.layoutInfo.totalItemsCount
+            if (measuredCount > 0) {
+                listState.scrollToItem((timeline.lastIndex).coerceAtMost(measuredCount - 1))
+            }
+        }
+    }
 
     fun beginReply(message: UiChatMessage) { replying = message; editing = null }
     fun react(message: UiChatMessage, emoji: String) { scope.launch { runCatching { repository.toggleMessageReaction(message, emoji) }.onSuccess { refresh() }.onFailure { error = "Reaction failed." } } }
@@ -80,7 +107,7 @@ fun MessengerScreenV2(repository: TwoShareRepository, onBack: () -> Unit, onStar
     Scaffold(containerColor = MaterialTheme.colorScheme.background,
         topBar = { TopAppBar(colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface), title = { Column { Text("TwoShare", style = MaterialTheme.typography.titleLarge); Text("Private Messenger", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary) } }, navigationIcon = { TextButton(onClick = onBack) { Text("‹ Feed") } }, actions = { FilledTonalIconButton(onClick = { scope.launch { runCatching { repository.createOutgoingCall(false) }.onSuccess { onStartCall(it, false) } } }) { Icon(Icons.Default.Call, "Voice call") }; Spacer(Modifier.width(5.dp)); FilledTonalIconButton(onClick = { scope.launch { runCatching { repository.createOutgoingCall(true) }.onSuccess { onStartCall(it, false) } } }) { Icon(Icons.Default.VideoCall, "Video call") }; Spacer(Modifier.width(8.dp)) }) },
         bottomBar = { Surface(shadowElevation = 8.dp) { Column(Modifier.fillMaxWidth().padding(10.dp)) { replying?.let { Banner("Replying to ${it.senderName}", it.body.orEmpty()) { replying = null } }; editing?.let { Banner("Editing message", it.body.orEmpty()) { editing = null; draft = "" } }; Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) { OutlinedTextField(draft, { draft = it.take(2000) }, Modifier.weight(1f), placeholder = { Text(if (editing == null) "Message…" else "Edit message…") }, maxLines = 4, shape = RoundedCornerShape(26.dp)); FilledIconButton(onClick = ::send, enabled = draft.isNotBlank(), modifier = Modifier.size(50.dp)) { Icon(Icons.Default.Send, "Send") } } } } }
-    ) { padding -> Column(Modifier.fillMaxSize().padding(padding)) { error?.let { Text(it, Modifier.padding(10.dp), color = MaterialTheme.colorScheme.error) }; LazyColumn(state = listState, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) { val timeline = (messages.map { Pair(epoch(it.createdAt), it as Any) } + calls.map { Pair(epoch(it.createdAt), it as Any) }).sortedBy { it.first }; items(timeline, key = { (_, item) -> if (item is UiChatMessage) "m-${item.id}" else "c-${(item as CallRow).id}" }) { (_, item) -> if (item is UiChatMessage) MessageRow(item, repository.currentUserId(), { beginReply(item) }, { editing = item; replying = null; draft = item.body.orEmpty() }, { emoji -> react(item, emoji) }, { failed -> messages = messages.filterNot { it.id == failed.id }; draft = failed.body.orEmpty() }) else CallLine(item as CallRow, repository.currentUserId()) } } } }
+    ) { padding -> Column(Modifier.fillMaxSize().padding(padding)) { error?.let { Text(it, Modifier.padding(10.dp), color = MaterialTheme.colorScheme.error) }; LazyColumn(state = listState, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) { items(timeline, key = { (_, item) -> if (item is UiChatMessage) "m-${item.id}" else "c-${(item as CallRow).id}" }) { (_, item) -> if (item is UiChatMessage) MessageRow(item, repository.currentUserId(), { beginReply(item) }, { editing = item; replying = null; draft = item.body.orEmpty() }, { emoji -> react(item, emoji) }, { failed -> messages = messages.filterNot { it.id == failed.id }; draft = failed.body.orEmpty() }) else CallLine(item as CallRow, repository.currentUserId()) } } } }
 }
 
 @Composable private fun Banner(title: String, text: String, close: () -> Unit) { Surface(color = MaterialTheme.colorScheme.primaryContainer.copy(alpha=.65f), shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth().padding(bottom=6.dp)) { Row(Modifier.padding(9.dp), verticalAlignment=Alignment.CenterVertically) { Box(Modifier.width(3.dp).height(30.dp).background(MaterialTheme.colorScheme.primary, RoundedCornerShape(4.dp))); Spacer(Modifier.width(8.dp)); Column(Modifier.weight(1f)) { Text(title, style=MaterialTheme.typography.labelMedium, color=MaterialTheme.colorScheme.primary); Text(text.take(90), maxLines=1, style=MaterialTheme.typography.bodySmall) }; TextButton(onClick=close) { Text("×") } } } }
