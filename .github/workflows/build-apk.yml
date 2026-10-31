@@ -37,14 +37,10 @@ jobs:
       - name: Require exact TwoShare signing certificate
         shell: bash
         run: |
-          if [ ! -f "$HOME/.android/debug.keystore" ]; then
-            echo "::error::TwoShare signing keystore is missing. Refusing to generate a different certificate because that would break APK updates."
-            exit 1
-          fi
+          if [ ! -f "$HOME/.android/debug.keystore" ]; then echo "::error::TwoShare signing keystore is missing."; exit 1; fi
           EXPECTED_SHA256="F68AE9FE634515DB4143F64595CA6EB70B68CEC73A5615C7942C5D4CF65E6688"
           ACTUAL_SHA256="$(keytool -list -v -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey 2>/dev/null | sed -n 's/^[[:space:]]*SHA256: //p' | head -n 1 | tr -d ':')"
           if [ "$ACTUAL_SHA256" != "$EXPECTED_SHA256" ]; then echo "::error::TwoShare signing certificate mismatch."; exit 1; fi
-          echo "Verified permanent TwoShare signing certificate: $ACTUAL_SHA256"
       - name: Build release APK
         env:
           ANDROID_HOME: /usr/local/lib/android/sdk
@@ -57,10 +53,9 @@ jobs:
           APK="app/build/outputs/apk/release/app-release.apk"
           ACTUAL_APK_SHA256="$("$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "$APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1 | tr '[:lower:]' '[:upper:]' | tr -d ':')"
           if [ "$ACTUAL_APK_SHA256" != "$EXPECTED_SHA256" ]; then echo "::error::Finished APK certificate mismatch."; exit 1; fi
-          echo "Verified finished APK certificate: $ACTUAL_APK_SHA256"
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: TwoShare-v1.0.7-release-apk
+          name: TwoShare-v1.0.8-release-apk
           path: app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
