@@ -70,7 +70,6 @@ fun MessengerScreenV2(repository: TwoShareRepository, onBack: () -> Unit, onStar
             calls = history
             error = null
         }.onFailure {
-            // Keep Messenger open even if backend data is temporarily incompatible/unavailable.
             calls = history
             error = it.localizedMessage ?: "Unable to load messages."
         }
@@ -138,7 +137,8 @@ fun MessengerScreenV2(repository: TwoShareRepository, onBack: () -> Unit, onStar
                     if(edits) message.editHistory.asReversed().forEach { Text("Previous: ${it.body}", style=MaterialTheme.typography.bodySmall, color=textColor.copy(alpha=.7f)) }
                 }
             }
-            if(message.reactions.isNotEmpty()) Surface(shape=RoundedCornerShape(14.dp), color=MaterialTheme.colorScheme.surface, shadowElevation=1.dp, modifier=Modifier.padding(top=(-5).dp, end=5.dp)) { Text(message.reactions.entries.joinToString(" ") { "${it.key} ${it.value.size}" }, Modifier.padding(horizontal=7.dp,vertical=2.dp), style=MaterialTheme.typography.labelMedium) }
+            // PaddingValues reject negative padding at runtime. Use offset for the floating chip effect.
+            if(message.reactions.isNotEmpty()) Surface(shape=RoundedCornerShape(14.dp), color=MaterialTheme.colorScheme.surface, shadowElevation=1.dp, modifier=Modifier.offset(y=(-5).dp).padding(end=5.dp)) { Text(message.reactions.entries.joinToString(" ") { "${it.key} ${it.value.size}" }, Modifier.padding(horizontal=7.dp,vertical=2.dp), style=MaterialTheme.typography.labelMedium) }
             Row(verticalAlignment=Alignment.CenterVertically) { Text(relative(message.createdAt)+(if(mine) " · $receipt" else ""), style=MaterialTheme.typography.labelSmall, color=MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha=.68f)); TextButton(onClick={actions=true}, contentPadding=PaddingValues(horizontal=5.dp), modifier=Modifier.height(26.dp)) { Text("•••") } }
             if(message.localState=="failed") TextButton(onClick={retry(message)}) { Text("Retry") }
         }
