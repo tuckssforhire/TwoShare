@@ -3,6 +3,7 @@ plugins {
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("org.jetbrains.kotlin.plugin.serialization")
+    id("com.google.gms.google-services")
 }
 
 android {
@@ -57,4 +58,6 @@ dependencies {
     implementation("io.ktor:ktor-client-android:3.6.0")
     implementation("io.coil-kt:coil-compose:2.7.0")
     implementation("io.github.webrtc-sdk:android:150.7871.01")
+    implementation(platform("com.google.firebase:firebase-bom:34.7.0"))
+    implementation("com.google.firebase:firebase-messaging")
 }
