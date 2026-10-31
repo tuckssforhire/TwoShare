@@ -71,8 +71,6 @@ class MainActivity : FragmentActivity() {
                 var updateInfo by remember { mutableStateOf<AppVersionInfo?>(null) }
 
                 LaunchedEffect(Unit) {
-                    // Version checking is deliberately non-blocking. If the network or version
-                    // endpoint is temporarily unavailable, TwoShare still opens normally.
                     runCatching { versionRepository.latestVersion() }
                         .getOrNull()
                         ?.takeIf { it.latestVersionCode > BuildConfig.VERSION_CODE }
@@ -99,18 +97,33 @@ class MainActivity : FragmentActivity() {
                     authChecked = true
                 }
 
-                // Keep Compose navigation in sync with the actual Supabase session. Previously the
-                // local signedIn flag could remain true after Auth had lost the session, leaving the
-                // feed visible while repository calls reported "Not signed in".
+                // Supabase 3.x can enter Initializing/RefreshFailure while restoring or refreshing
+                // a stored session. Those states are temporary and must not bounce the UI to login.
+                // Only a stable NotAuthenticated state signs the local UI out, and it is debounced
+                // to avoid a one-frame lifecycle transition becoming a visible "session expired".
                 LaunchedEffect(Unit) {
                     SupabaseProvider.client.auth.sessionStatus.collect { status ->
                         if (!authChecked) return@collect
-                        if (status is SessionStatus.NotAuthenticated && signedIn && !biometricRequired) {
-                            showMessenger = false
-                            activeCall = null
-                            activeCallIncoming = false
-                            incomingCall = null
-                            signedIn = false
+                        when (status) {
+                            is SessionStatus.Authenticated -> {
+                                // A successful SDK refresh/restoration keeps the existing UI state.
+                            }
+                            SessionStatus.Initializing,
+                            is SessionStatus.RefreshFailure -> {
+                                // SDK is restoring/retrying. Keep the user where they are.
+                            }
+                            is SessionStatus.NotAuthenticated -> {
+                                if (!signedIn || biometricRequired) return@collect
+                                delay(750)
+                                val stillNoUser = SupabaseProvider.client.auth.currentUserOrNull() == null
+                                if (stillNoUser) {
+                                    showMessenger = false
+                                    activeCall = null
+                                    activeCallIncoming = false
+                                    incomingCall = null
+                                    signedIn = false
+                                }
+                            }
                         }
                     }
                 }
@@ -123,9 +136,7 @@ class MainActivity : FragmentActivity() {
                             biometricRequired = false
                             signedIn = true
                         },
-                        onError = { message ->
-                            biometricError = message
-                        }
+                        onError = { message -> biometricError = message }
                     )
                 }
 
@@ -145,13 +156,9 @@ class MainActivity : FragmentActivity() {
 
                 when {
                     !authChecked -> TwoShareStartupScreen()
-
                     biometricRequired -> BiometricUnlockScreen(
                         error = biometricError,
-                        onUnlock = {
-                            biometricError = null
-                            biometricPromptVersion++
-                        },
+                        onUnlock = { biometricError = null; biometricPromptVersion++ },
                         onUseAccountLogin = {
                             scope.launch {
                                 runCatching { repository.signOut() }
@@ -161,19 +168,13 @@ class MainActivity : FragmentActivity() {
                             }
                         }
                     )
-
                     signedIn -> {
                         val call = activeCall
                         if (call != null) {
-                            CallScreen(
-                                repository = repository,
-                                initialCall = call,
-                                incoming = activeCallIncoming,
-                                onFinished = {
-                                    activeCall = null
-                                    activeCallIncoming = false
-                                }
-                            )
+                            CallScreen(repository, call, activeCallIncoming) {
+                                activeCall = null
+                                activeCallIncoming = false
+                            }
                         } else if (showMessenger) {
                             MessengerScreen(
                                 repository = repository,
@@ -199,7 +200,6 @@ class MainActivity : FragmentActivity() {
                             )
                         }
                     }
-
                     else -> LoginScreen(
                         authManager = authManager,
                         onSignedIn = {
@@ -217,34 +217,9 @@ class MainActivity : FragmentActivity() {
                     AlertDialog(
                         onDismissRequest = { },
                         title = { Text("Incoming TwoLink") },
-                        text = {
-                            Text(
-                                if (ringing.isVideo) {
-                                    "Your TwoShare partner is starting a video TwoLink."
-                                } else {
-                                    "Your TwoShare partner is starting a voice TwoLink."
-                                }
-                            )
-                        },
-                        confirmButton = {
-                            TextButton(onClick = {
-                                incomingCall = null
-                                activeCallIncoming = true
-                                activeCall = ringing
-                            }) {
-                                Text("Answer")
-                            }
-                        },
-                        dismissButton = {
-                            TextButton(onClick = {
-                                scope.launch {
-                                    runCatching { repository.rejectCall(ringing.id) }
-                                    incomingCall = null
-                                }
-                            }) {
-                                Text("Decline")
-                            }
-                        }
+                        text = { Text(if (ringing.isVideo) "Your TwoShare partner is starting a video TwoLink." else "Your TwoShare partner is starting a voice TwoLink.") },
+                        confirmButton = { TextButton(onClick = { incomingCall = null; activeCallIncoming = true; activeCall = ringing }) { Text("Answer") } },
+                        dismissButton = { TextButton(onClick = { scope.launch { runCatching { repository.rejectCall(ringing.id) }; incomingCall = null } }) { Text("Decline") } }
                     )
                 }
 
@@ -253,147 +228,62 @@ class MainActivity : FragmentActivity() {
                     AlertDialog(
                         onDismissRequest = { updateInfo = null },
                         title = { Text("TwoShare update available") },
-                        text = {
-                            Text(
-                                "A newer version of TwoShare (${availableUpdate.latestVersionName}) is available. " +
-                                    "Download the latest version here."
-                            )
-                        },
+                        text = { Text("A newer version of TwoShare (${availableUpdate.latestVersionName}) is available. Download the latest version here.") },
                         confirmButton = {
-                            TextButton(
-                                onClick = {
-                                    runCatching {
-                                        startActivity(
-                                            Intent(
-                                                Intent.ACTION_VIEW,
-                                                Uri.parse(availableUpdate.downloadUrl)
-                                            )
-                                        )
-                                    }
-                                    updateInfo = null
-                                }
-                            ) {
-                                Text("Download latest version")
-                            }
+                            TextButton(onClick = {
+                                runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(availableUpdate.downloadUrl))) }
+                                updateInfo = null
+                            }) { Text("Download latest version") }
                         },
-                        dismissButton = {
-                            TextButton(onClick = { updateInfo = null }) {
-                                Text("Later")
-                            }
-                        }
+                        dismissButton = { TextButton(onClick = { updateInfo = null }) { Text("Later") } }
                     )
                 }
             }
         }
     }
 
-    private fun requestBiometricUnlock(
-        onSuccess: () -> Unit,
-        onError: (String) -> Unit
-    ) {
+    private fun requestBiometricUnlock(onSuccess: () -> Unit, onError: (String) -> Unit) {
         val executor = ContextCompat.getMainExecutor(this)
-        val prompt = BiometricPrompt(
-            this,
-            executor,
-            object : BiometricPrompt.AuthenticationCallback() {
-                override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
-                    super.onAuthenticationSucceeded(result)
-                    onSuccess()
-                }
-
-                override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
-                    super.onAuthenticationError(errorCode, errString)
-                    onError(
-                        when (errorCode) {
-                            BiometricPrompt.ERROR_NEGATIVE_BUTTON,
-                            BiometricPrompt.ERROR_USER_CANCELED,
-                            BiometricPrompt.ERROR_CANCELED -> "Biometric unlock cancelled."
-                            else -> errString.toString().ifBlank { "Biometric unlock failed." }
-                        }
-                    )
-                }
-
-                override fun onAuthenticationFailed() {
-                    super.onAuthenticationFailed()
-                    onError("Fingerprint or face not recognized. Try again.")
-                }
+        val prompt = BiometricPrompt(this, executor, object : BiometricPrompt.AuthenticationCallback() {
+            override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) { super.onAuthenticationSucceeded(result); onSuccess() }
+            override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                super.onAuthenticationError(errorCode, errString)
+                onError(when (errorCode) {
+                    BiometricPrompt.ERROR_NEGATIVE_BUTTON, BiometricPrompt.ERROR_USER_CANCELED, BiometricPrompt.ERROR_CANCELED -> "Biometric unlock cancelled."
+                    else -> errString.toString().ifBlank { "Biometric unlock failed." }
+                })
             }
-        )
-
+            override fun onAuthenticationFailed() { super.onAuthenticationFailed(); onError("Fingerprint or face not recognized. Try again.") }
+        })
         val promptInfo = BiometricPrompt.PromptInfo.Builder()
-            .setTitle("Unlock TwoShare")
-            .setSubtitle("Use your fingerprint or face")
+            .setTitle("Unlock TwoShare").setSubtitle("Use your fingerprint or face")
             .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_WEAK)
-            .setNegativeButtonText("Use account login")
-            .build()
-
+            .setNegativeButtonText("Use account login").build()
         prompt.authenticate(promptInfo)
     }
 }
 
 @Composable
-private fun BiometricUnlockScreen(
-    error: String?,
-    onUnlock: () -> Unit,
-    onUseAccountLogin: () -> Unit
-) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(28.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            Image(
-                painter = painterResource(R.drawable.twoshare_icon),
-                contentDescription = "TwoShare logo",
-                modifier = Modifier.size(120.dp)
-            )
-            Spacer(Modifier.height(18.dp))
-            Text("TwoShare locked", style = MaterialTheme.typography.headlineSmall)
-            Spacer(Modifier.height(6.dp))
-            Text("Unlock this trusted phone with fingerprint or face.")
-            error?.let {
-                Spacer(Modifier.height(12.dp))
-                Text(it, color = MaterialTheme.colorScheme.error)
-            }
-            Spacer(Modifier.height(20.dp))
-            Button(onClick = onUnlock) {
-                Text("Unlock with biometrics")
-            }
-            Spacer(Modifier.height(8.dp))
-            OutlinedButton(onClick = onUseAccountLogin) {
-                Text("Use account login")
-            }
+private fun BiometricUnlockScreen(error: String?, onUnlock: () -> Unit, onUseAccountLogin: () -> Unit) {
+    Box(Modifier.fillMaxSize().padding(28.dp), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+            Image(painterResource(R.drawable.twoshare_icon), "TwoShare logo", Modifier.size(120.dp))
+            Spacer(Modifier.height(18.dp)); Text("TwoShare locked", style = MaterialTheme.typography.headlineSmall)
+            Spacer(Modifier.height(6.dp)); Text("Unlock this trusted phone with fingerprint or face.")
+            error?.let { Spacer(Modifier.height(12.dp)); Text(it, color = MaterialTheme.colorScheme.error) }
+            Spacer(Modifier.height(20.dp)); Button(onClick = onUnlock) { Text("Unlock with biometrics") }
+            Spacer(Modifier.height(8.dp)); OutlinedButton(onClick = onUseAccountLogin) { Text("Use account login") }
         }
     }
 }
 
 @Composable
 private fun TwoShareStartupScreen() {
-    Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            Image(
-                painter = painterResource(R.drawable.twoshare_icon),
-                contentDescription = "TwoShare logo",
-                modifier = Modifier.size(144.dp)
-            )
-            Spacer(Modifier.height(18.dp))
-            Text("TwoShare", style = MaterialTheme.typography.headlineLarge)
-            Spacer(Modifier.height(6.dp))
-            Text(
-                "Private sharing for two",
-                style = MaterialTheme.typography.bodyMedium
-            )
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+            Image(painterResource(R.drawable.twoshare_icon), "TwoShare logo", Modifier.size(144.dp))
+            Spacer(Modifier.height(18.dp)); Text("TwoShare", style = MaterialTheme.typography.headlineLarge)
+            Spacer(Modifier.height(6.dp)); Text("Private sharing for two", style = MaterialTheme.typography.bodyMedium)
         }
     }
 }
