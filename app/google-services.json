@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "196917622306",
+    "project_id": "twoshare-9db90",
+    "storage_bucket": "twoshare-9db90.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:196917622306:android:2b488fdd475f71c673fc7b",
+        "android_client_info": {
+          "package_name": "com.twoshare.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD13J5MQcO4hHoFrG3_iCEZuFlnNL7n9gs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
