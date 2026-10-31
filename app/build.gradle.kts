@@ -9,34 +9,13 @@ plugins {
 android {
     namespace = "com.twoshare.app"
     compileSdk = 36
-
-    defaultConfig {
-        applicationId = "com.twoshare.app"
-        minSdk = 26
-        targetSdk = 36
-        versionCode = 32
-        versionName = "1.0.8"
-    }
-
-    signingConfigs {
-        getByName("debug") {
-            storeFile = file("${System.getProperty("user.home")}/.android/debug.keystore")
-            storePassword = "android"
-            keyAlias = "androiddebugkey"
-            keyPassword = "android"
-        }
-    }
-
-    buildTypes {
-        getByName("debug") { signingConfig = signingConfigs.getByName("debug") }
-        getByName("release") { isDebuggable = false; isMinifyEnabled = false; signingConfig = signingConfigs.getByName("debug") }
-    }
-
+    defaultConfig { applicationId = "com.twoshare.app"; minSdk = 26; targetSdk = 36; versionCode = 32; versionName = "1.0.8" }
+    signingConfigs { getByName("debug") { storeFile = file("${System.getProperty("user.home")}/.android/debug.keystore"); storePassword = "android"; keyAlias = "androiddebugkey"; keyPassword = "android" } }
+    buildTypes { getByName("debug") { signingConfig = signingConfigs.getByName("debug") }; getByName("release") { isDebuggable = false; isMinifyEnabled = false; signingConfig = signingConfigs.getByName("debug") } }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     buildFeatures { compose = true; buildConfig = true }
     packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }
 }
-
 kotlin { jvmToolchain(17) }
 
 dependencies {
@@ -60,4 +39,5 @@ dependencies {
     implementation("io.github.webrtc-sdk:android:150.7871.01")
     implementation(platform("com.google.firebase:firebase-bom:34.7.0"))
     implementation("com.google.firebase:firebase-messaging")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.10.2")
 }
