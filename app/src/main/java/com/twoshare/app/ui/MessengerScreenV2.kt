@@ -61,13 +61,19 @@ fun MessengerScreenV2(repository: TwoShareRepository, onBack: () -> Unit, onStar
 
     suspend fun refresh() {
         runCatching { chat.markIncomingRead() }
-        runCatching { chat.loadMessages() to repository.loadCallHistory() }.onSuccess { (server, history) ->
+        val serverResult = runCatching { chat.loadMessages() }
+        val history = runCatching { repository.loadCallHistory() }.getOrDefault(emptyList())
+        serverResult.onSuccess { server ->
             val pending = messages.filter { it.localState != "sent" }
             val ids = server.mapNotNull { it.clientId }.toSet()
             messages = server + pending.filter { it.clientId !in ids }
             calls = history
             error = null
-        }.onFailure { error = it.localizedMessage ?: "Unable to refresh chat." }
+        }.onFailure {
+            // Keep Messenger open even if backend data is temporarily incompatible/unavailable.
+            calls = history
+            error = it.localizedMessage ?: "Unable to load messages."
+        }
     }
 
     LaunchedEffect(Unit) {
@@ -102,9 +108,6 @@ fun MessengerScreenV2(repository: TwoShareRepository, onBack: () -> Unit, onStar
         Column(Modifier.fillMaxSize().padding(padding)) {
             error?.let { Text(it, Modifier.padding(10.dp), color = MaterialTheme.colorScheme.error) }
             LazyColumn(state = listState, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                // Do not use database IDs as Compose keys here. Message and call history can contain
-                // duplicate/legacy IDs or optimistic/server copies during refresh, which makes LazyColumn
-                // throw an IllegalArgumentException and closes the app as soon as Messenger is opened.
                 itemsIndexed(timeline) { _, entry ->
                     val item = entry.second
                     if (item is UiChatMessage) MessageRow(item, repository.currentUserId(), { beginReply(item) }, { editing = item; replying = null; draft = item.body.orEmpty() }, { emoji -> react(item, emoji) }, { failed -> messages = messages.filterNot { it.id == failed.id }; draft = failed.body.orEmpty() })
