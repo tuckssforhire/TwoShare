@@ -17,12 +17,16 @@ class AuthManager {
 
     suspend fun restoreTrustedSession(context: Context): Boolean {
         val user = supabase.auth.currentUserOrNull() ?: return false
-        if (!isDeviceTrusted(context, user.id)) { supabase.auth.signOut(); return false }
-        return runCatching {
-            requireAllowedUser()
-            rememberEmail(context, user.email.orEmpty())
-            true
-        }.getOrElse { supabase.auth.signOut(); false }
+        if (!isDeviceTrusted(context, user.id)) {
+            supabase.auth.signOut()
+            return false
+        }
+
+        // A profile lookup is a network request. Do not destroy a valid stored session just
+        // because the phone briefly changed networks or Supabase is retrying a token refresh.
+        // The SDK owns session refresh/retry; only explicit user actions should sign out here.
+        rememberEmail(context, user.email.orEmpty())
+        return true
     }
 
     suspend fun signInWithPassword(context: Context, email: String, password: String): PasswordSignInResult {
