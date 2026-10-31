@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.biometric.BiometricManager
@@ -51,6 +52,11 @@ class MainActivity : FragmentActivity() {
                 var authChecked by remember { mutableStateOf(false) }; var signedIn by remember { mutableStateOf(false) }
                 var biometricRequired by remember { mutableStateOf(false) }; var biometricError by remember { mutableStateOf<String?>(null) }; var biometricPromptVersion by remember { mutableIntStateOf(0) }
                 var showMessenger by remember { mutableStateOf(intent.getBooleanExtra("open_messenger", false)) }; var activeCall by remember { mutableStateOf<CallRow?>(null) }; var activeCallIncoming by remember { mutableStateOf(false) }; var incomingCall by remember { mutableStateOf<CallRow?>(null) }; var updateInfo by remember { mutableStateOf<AppVersionInfo?>(null) }
+                var showExitConfirmation by remember { mutableStateOf(false) }
+
+                BackHandler(enabled = authChecked && signedIn && !biometricRequired && activeCall == null) {
+                    if (showMessenger) showMessenger = false else showExitConfirmation = true
+                }
 
                 LaunchedEffect(Unit) { runCatching { versionRepository.latestVersion() }.getOrNull()?.takeIf { it.latestVersionCode > BuildConfig.VERSION_CODE }?.let { updateInfo = it } }
                 LaunchedEffect(Unit) {
@@ -74,6 +80,13 @@ class MainActivity : FragmentActivity() {
                     signedIn -> { val call=activeCall; if (call!=null) CallScreen(repository,call,activeCallIncoming){activeCall=null;activeCallIncoming=false} else if(showMessenger) MessengerScreenV2(repository,{showMessenger=false}){startedCall,incoming->incomingCall=null;activeCallIncoming=incoming;activeCall=startedCall} else FeedScreen(repository,authManager,{showMessenger=true}){ scope.launch { runCatching { PushNotificationManager.unregisterCurrentDevice(this@MainActivity) } }; showMessenger=false;activeCall=null;incomingCall=null;biometricRequired=false;signedIn=false } }
                     else -> LoginScreen(authManager) { showMessenger=false;activeCall=null;incomingCall=null;biometricRequired=false;signedIn=true }
                 }
+                if (showExitConfirmation) AlertDialog(
+                    onDismissRequest = { showExitConfirmation = false },
+                    title = { Text("Exit TwoShare?") },
+                    text = { Text("Do you want to exit the app?") },
+                    confirmButton = { TextButton(onClick = { showExitConfirmation = false; finish() }) { Text("Exit") } },
+                    dismissButton = { TextButton(onClick = { showExitConfirmation = false }) { Text("Cancel") } }
+                )
                 val ringing=incomingCall
                 if(authChecked&&signedIn&&activeCall==null&&ringing!=null) AlertDialog(onDismissRequest={},title={Text("Incoming TwoLink")},text={Text(if(ringing.isVideo)"Your TwoShare partner is starting a video TwoLink." else "Your TwoShare partner is starting a voice TwoLink.")},confirmButton={TextButton(onClick={incomingCall=null;activeCallIncoming=true;activeCall=ringing}){Text("Answer")}},dismissButton={TextButton(onClick={scope.launch{runCatching{repository.rejectCall(ringing.id)};incomingCall=null}}){Text("Decline")}})
                 val availableUpdate=updateInfo
