@@ -1,6 +1,7 @@
 package com.twoshare.app.push
 
 import android.app.ActivityManager
+import android.app.Notification
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
@@ -31,7 +32,7 @@ class TwoShareFirebaseMessagingService : FirebaseMessagingService() {
         if (!isCall && isAppInForeground()) return
         val title = message.notification?.title ?: message.data["title"] ?: if (isCall) "Incoming TwoLink" else "TwoShare"
         val body = message.notification?.body ?: message.data["body"] ?: if (isCall) "Your partner is calling." else "You have a new notification."
-        showNotification(title, body, isCall)
+        showNotification(title, body, isCall, message.data["call_id"])
     }
 
     private fun isAppInForeground(): Boolean {
@@ -41,25 +42,40 @@ class TwoShareFirebaseMessagingService : FirebaseMessagingService() {
         } == true
     }
 
-    private fun showNotification(title: String, body: String, isCall: Boolean) {
+    private fun showNotification(title: String, body: String, isCall: Boolean, callId: String?) {
         PushNotificationManager.ensureNotificationChannels(this)
         val manager = getSystemService(NotificationManager::class.java)
         val intent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
             putExtra("open_messenger", !isCall)
+            if (isCall) {
+                putExtra("incoming_call", true)
+                callId?.let { putExtra("incoming_call_id", it) }
+            }
         }
-        val pending = PendingIntent.getActivity(this, 100, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val requestCode = if (isCall) 200 else 100
+        val pending = PendingIntent.getActivity(this, requestCode, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val channel = if (isCall) PushNotificationManager.CHANNEL_CALLS else PushNotificationManager.CHANNEL_MESSAGES
-        val notification = NotificationCompat.Builder(this, channel)
+        val builder = NotificationCompat.Builder(this, channel)
             .setSmallIcon(R.drawable.twoshare_icon)
             .setContentTitle(title)
             .setContentText(body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
             .setContentIntent(pending)
-            .setAutoCancel(true)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(!isCall)
+            .setOngoing(isCall)
+            .setPriority(NotificationCompat.PRIORITY_MAX)
             .setCategory(if (isCall) NotificationCompat.CATEGORY_CALL else NotificationCompat.CATEGORY_MESSAGE)
-            .build()
-        manager.notify((System.currentTimeMillis() and 0x7fffffff).toInt(), notification)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+
+        if (isCall) builder.setFullScreenIntent(pending, true).setTimeoutAfter(120_000)
+        val notification = builder.build().apply {
+            if (isCall) flags = flags or Notification.FLAG_INSISTENT
+        }
+        manager.notify(if (isCall) INCOMING_CALL_NOTIFICATION_ID else (System.currentTimeMillis() and 0x7fffffff).toInt(), notification)
+    }
+
+    companion object {
+        private const val INCOMING_CALL_NOTIFICATION_ID = 22001
     }
 }
