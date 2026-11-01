@@ -13,17 +13,20 @@ object PushSender {
     suspend fun notifyOther(type: String, messageId: String? = null, callId: String? = null) {
         runCatching {
             val current = supabase.auth.currentUserOrNull()?.id ?: return
-            val recipient = supabase.from("profiles").select().decodeList<ProfileRow>()
-                .firstOrNull { it.id != current }?.id ?: return
-            supabase.functions.invoke(
-                function = "send-push",
-                body = buildJsonObject {
-                    put("recipient_user_id", recipient)
-                    put("type", type)
-                    messageId?.let { put("message_id", it) }
-                    callId?.let { put("call_id", it) }
-                }
-            )
+            val recipients = supabase.from("profiles").select().decodeList<ProfileRow>()
+                .map { it.id }
+                .filter { it != current }
+            recipients.forEach { recipientId ->
+                supabase.functions.invoke(
+                    function = "send-push",
+                    body = buildJsonObject {
+                        put("recipient_user_id", recipientId)
+                        put("type", type)
+                        messageId?.let { put("message_id", it) }
+                        callId?.let { put("call_id", it) }
+                    }
+                )
+            }
         }
     }
 }
