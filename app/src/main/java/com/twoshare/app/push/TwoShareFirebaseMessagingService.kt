@@ -1,11 +1,8 @@
 package com.twoshare.app.push
 
-import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Intent
-import android.media.AudioAttributes
-import android.os.Build
 import androidx.core.app.NotificationCompat
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
@@ -21,6 +18,7 @@ class TwoShareFirebaseMessagingService : FirebaseMessagingService() {
 
     override fun onNewToken(token: String) {
         super.onNewToken(token)
+        PushNotificationManager.ensureNotificationChannels(applicationContext)
         scope.launch { runCatching { PushNotificationManager.registerToken(applicationContext, token) } }
     }
 
@@ -34,14 +32,14 @@ class TwoShareFirebaseMessagingService : FirebaseMessagingService() {
     }
 
     private fun showNotification(title: String, body: String, isCall: Boolean) {
+        PushNotificationManager.ensureNotificationChannels(this)
         val manager = getSystemService(NotificationManager::class.java)
-        ensureChannels(manager)
         val intent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
             putExtra("open_messenger", !isCall)
         }
         val pending = PendingIntent.getActivity(this, 100, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        val channel = if (isCall) CHANNEL_CALLS else CHANNEL_MESSAGES
+        val channel = if (isCall) PushNotificationManager.CHANNEL_CALLS else PushNotificationManager.CHANNEL_MESSAGES
         val notification = NotificationCompat.Builder(this, channel)
             .setSmallIcon(R.drawable.twoshare_icon)
             .setContentTitle(title)
@@ -49,26 +47,9 @@ class TwoShareFirebaseMessagingService : FirebaseMessagingService() {
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
             .setContentIntent(pending)
             .setAutoCancel(true)
-            .setPriority(if (isCall) NotificationCompat.PRIORITY_HIGH else NotificationCompat.PRIORITY_DEFAULT)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(if (isCall) NotificationCompat.CATEGORY_CALL else NotificationCompat.CATEGORY_MESSAGE)
             .build()
         manager.notify((System.currentTimeMillis() and 0x7fffffff).toInt(), notification)
-    }
-
-    private fun ensureChannels(manager: NotificationManager) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-        manager.createNotificationChannel(NotificationChannel(CHANNEL_MESSAGES, "Messages & activity", NotificationManager.IMPORTANCE_DEFAULT).apply {
-            description = "TwoShare messages, replies and reactions"
-        })
-        manager.createNotificationChannel(NotificationChannel(CHANNEL_CALLS, "TwoLink calls", NotificationManager.IMPORTANCE_HIGH).apply {
-            description = "Incoming TwoLink voice and video calls"
-            setSound(android.provider.Settings.System.DEFAULT_RINGTONE_URI, AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE).build())
-            enableVibration(true)
-        })
-    }
-
-    companion object {
-        const val CHANNEL_MESSAGES = "twoshare_messages"
-        const val CHANNEL_CALLS = "twoshare_calls"
     }
 }
