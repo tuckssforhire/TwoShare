@@ -1,14 +1,21 @@
 package com.twoshare.app.ui
 
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -30,128 +37,119 @@ fun LoginScreen(authManager: AuthManager, onSignedIn: () -> Unit) {
     var info by remember { mutableStateOf<String?>(null) }
 
     error?.let { message ->
-        AlertDialog(
-            onDismissRequest = { error = null },
-            title = { Text("Unable to continue") },
-            text = { Text(message) },
-            confirmButton = {
-                Button(onClick = { error = null }) { Text("OK") }
-            }
-        )
+        AlertDialog(onDismissRequest = { error = null }, title = { Text("Unable to continue") }, text = { Text(message) }, confirmButton = { Button(onClick = { error = null }) { Text("OK") } })
     }
-
     info?.let { message ->
-        AlertDialog(
-            onDismissRequest = { info = null },
-            title = { Text(if (verifyingEmail) "Check your email" else "TwoShare") },
-            text = { Text(message) },
-            confirmButton = {
-                Button(onClick = { info = null }) { Text("OK") }
-            }
-        )
+        AlertDialog(onDismissRequest = { info = null }, title = { Text(if (verifyingEmail) "Check your email" else "TwoShare") }, text = { Text(message) }, confirmButton = { Button(onClick = { info = null }) { Text("OK") } })
     }
 
-    Surface(modifier = Modifier.fillMaxSize()) {
-        Box(modifier = Modifier.fillMaxSize().padding(28.dp), contentAlignment = Alignment.Center) {
-            Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                Image(painter = painterResource(R.drawable.twoshare_icon), contentDescription = "TwoShare logo", modifier = Modifier.size(112.dp))
-                Spacer(Modifier.height(14.dp))
-                Text("TwoShare", style = MaterialTheme.typography.headlineLarge)
-                Spacer(Modifier.height(8.dp))
-                Text("Private sharing and messenger for two", style = MaterialTheme.typography.bodyMedium)
-                Spacer(Modifier.height(28.dp))
+    Box(Modifier.fillMaxSize().background(Color(0xFFF8EEF2))) {
+        // Soft memory-wall collage. Photos stay unedited; Compose only crops them to the cards.
+        Column(Modifier.fillMaxWidth().align(Alignment.TopCenter)) {
+            Row(Modifier.fillMaxWidth().height(150.dp)) {
+                LoginPhoto(R.drawable.login_photo_02, Modifier.weight(1f).fillMaxHeight())
+                LoginPhoto(R.drawable.login_photo_05, Modifier.weight(1f).fillMaxHeight())
+                LoginPhoto(R.drawable.login_photo_09, Modifier.weight(1f).fillMaxHeight())
+            }
+            Row(Modifier.fillMaxWidth().height(120.dp)) {
+                LoginPhoto(R.drawable.login_photo_03, Modifier.weight(1f).fillMaxHeight())
+                LoginPhoto(R.drawable.login_photo_10, Modifier.weight(1.25f).fillMaxHeight())
+                LoginPhoto(R.drawable.login_photo_07, Modifier.weight(1f).fillMaxHeight())
+            }
+        }
 
-                OutlinedTextField(
-                    value = email,
-                    onValueChange = { email = it },
-                    modifier = Modifier.fillMaxWidth(), label = { Text("Email") }, singleLine = true,
-                    enabled = !verifyingEmail && !loading,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email)
+        Box(
+            Modifier.fillMaxSize().background(
+                Brush.verticalGradient(
+                    0f to Color.Transparent,
+                    .25f to Color(0x55F8EEF2),
+                    .40f to Color(0xFFF8EEF2),
+                    1f to Color(0xFFF8EEF2)
                 )
+            )
+        )
 
-                if (!verifyingEmail) {
-                    Spacer(Modifier.height(12.dp))
-                    OutlinedTextField(
-                        value = password, onValueChange = { password = it },
-                        modifier = Modifier.fillMaxWidth(), label = { Text("Password") }, singleLine = true,
-                        enabled = !loading, visualTransformation = PasswordVisualTransformation(),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
-                    )
-                } else {
-                    Spacer(Modifier.height(12.dp))
-                    OutlinedTextField(
-                        value = code, onValueChange = { code = it.filter(Char::isDigit).take(8) },
-                        modifier = Modifier.fillMaxWidth(), label = { Text("Email verification code") }, singleLine = true,
-                        enabled = !loading, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword)
-                    )
-                }
+        Column(
+            modifier = Modifier.fillMaxWidth().align(Alignment.BottomCenter).padding(horizontal = 24.dp, vertical = 22.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Image(painter = painterResource(R.drawable.twoshare_icon), contentDescription = "TwoShare logo", modifier = Modifier.size(72.dp))
+            Text("TwoShare", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
+            Text("Just us, all in one place.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(18.dp))
 
-                Spacer(Modifier.height(20.dp))
-
-                if (!verifyingEmail) {
-                    Button(
-                        onClick = {
-                            scope.launch {
-                                loading = true; error = null; info = null
-                                runCatching { authManager.signInWithPassword(context, email, password) }
-                                    .onSuccess { result ->
-                                        when (result) {
-                                            PasswordSignInResult.TRUSTED_DEVICE -> onSignedIn()
-                                            PasswordSignInResult.EMAIL_CODE_REQUIRED -> {
-                                                verifyingEmail = true; code = ""
-                                                info = "New device detected. Enter the code sent to your email. No password change is required."
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = .96f)),
+                elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
+            ) {
+                Column(Modifier.padding(18.dp)) {
+                    OutlinedTextField(value = email, onValueChange = { email = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Email") }, singleLine = true, enabled = !verifyingEmail && !loading, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email))
+                    Spacer(Modifier.height(10.dp))
+                    if (!verifyingEmail) {
+                        OutlinedTextField(value = password, onValueChange = { password = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Password") }, singleLine = true, enabled = !loading, visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password))
+                        Spacer(Modifier.height(16.dp))
+                        Button(
+                            onClick = {
+                                scope.launch {
+                                    loading = true; error = null; info = null
+                                    runCatching { authManager.signInWithPassword(context, email, password) }
+                                        .onSuccess { result ->
+                                            when (result) {
+                                                PasswordSignInResult.TRUSTED_DEVICE -> onSignedIn()
+                                                PasswordSignInResult.EMAIL_CODE_REQUIRED -> { verifyingEmail = true; code = ""; info = "New device detected. Enter the code sent to your email. No password change is required." }
                                             }
-                                        }
-                                    }.onFailure { error = friendlyAuthError(it) }
-                                loading = false
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth(), enabled = !loading && email.isNotBlank() && password.isNotBlank()
-                    ) {
-                        if (loading) CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp) else Text("Sign in")
+                                        }.onFailure { error = friendlyAuthError(it) }
+                                    loading = false
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth().height(50.dp), enabled = !loading && email.isNotBlank() && password.isNotBlank(), shape = RoundedCornerShape(14.dp)
+                        ) { if (loading) CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp) else Text("Sign in") }
+                        if (authManager.canUseBiometrics(context)) {
+                            Spacer(Modifier.height(8.dp))
+                            Text("Biometric unlock can be enabled in Account & security after signing in.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        TextButton(
+                            onClick = {
+                                scope.launch {
+                                    loading = true; error = null; info = null
+                                    runCatching { authManager.startEmailCodeSignIn(email) }
+                                        .onSuccess { verifyingEmail = true; code = ""; info = "We sent a sign-in code to your email. Verify it to sign in and trust this phone." }
+                                        .onFailure { error = friendlyAuthError(it) }
+                                    loading = false
+                                }
+                            },
+                            modifier = Modifier.align(Alignment.CenterHorizontally), enabled = !loading && email.isNotBlank()
+                        ) { Text("Sign in with email code") }
+                    } else {
+                        OutlinedTextField(value = code, onValueChange = { code = it.filter(Char::isDigit).take(8) }, modifier = Modifier.fillMaxWidth(), label = { Text("Email verification code") }, singleLine = true, enabled = !loading, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword))
+                        Spacer(Modifier.height(16.dp))
+                        Button(
+                            onClick = {
+                                scope.launch {
+                                    loading = true; error = null
+                                    runCatching { authManager.verifyNewDevice(context, email, code) }.onSuccess { onSignedIn() }.onFailure { error = friendlyAuthError(it) }
+                                    loading = false
+                                }
+                            }, modifier = Modifier.fillMaxWidth().height(50.dp), enabled = !loading && code.isNotBlank(), shape = RoundedCornerShape(14.dp)
+                        ) { if (loading) CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp) else Text("Verify email code") }
+                        TextButton(onClick = { verifyingEmail = false; code = ""; info = null; error = null }, modifier = Modifier.align(Alignment.CenterHorizontally), enabled = !loading) { Text("Back to login") }
                     }
-                    if (authManager.canUseBiometrics(context)) {
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            "Tip: after signing in, enable Biometric unlock in Account & security. TwoShare will then show a fingerprint/face unlock button when you reopen the app.",
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                    }
-                    Spacer(Modifier.height(6.dp))
-                    OutlinedButton(
-                        onClick = {
-                            scope.launch {
-                                loading = true; error = null; info = null
-                                runCatching { authManager.startEmailCodeSignIn(email) }
-                                    .onSuccess {
-                                        verifyingEmail = true; code = ""
-                                        info = "We sent a sign-in code to your email. Verify it to sign in and trust this phone."
-                                    }.onFailure { error = friendlyAuthError(it) }
-                                loading = false
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth(), enabled = !loading && email.isNotBlank()
-                    ) { Text("Sign in with email code") }
-                } else {
-                    Button(
-                        onClick = {
-                            scope.launch {
-                                loading = true; error = null
-                                runCatching { authManager.verifyNewDevice(context, email, code) }
-                                    .onSuccess { onSignedIn() }.onFailure { error = friendlyAuthError(it) }
-                                loading = false
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth(), enabled = !loading && code.isNotBlank()
-                    ) {
-                        if (loading) CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp) else Text("Verify email code")
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    TextButton(onClick = { verifyingEmail = false; code = ""; info = null; error = null }, enabled = !loading) { Text("Back to login") }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun LoginPhoto(drawable: Int, modifier: Modifier = Modifier) {
+    Image(
+        painter = painterResource(drawable),
+        contentDescription = null,
+        contentScale = ContentScale.Crop,
+        modifier = modifier.padding(2.dp).clip(RoundedCornerShape(10.dp))
+    )
 }
 
 private fun friendlyAuthError(throwable: Throwable): String {
