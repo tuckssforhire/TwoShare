@@ -17,6 +17,8 @@
     <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
     <uses-feature android:name="android.hardware.fingerprint" android:required="false" />
     <application android:allowBackup="false" android:icon="@drawable/twoshare_icon" android:roundIcon="@drawable/twoshare_icon" android:label="TwoShare" android:supportsRtl="true" android:theme="@style/Theme.TwoShare">
+        <meta-data android:name="com.google.firebase.messaging.default_notification_channel_id" android:value="twoshare_messages" />
+        <meta-data android:name="com.google.firebase.messaging.default_notification_icon" android:resource="@drawable/twoshare_icon" />
         <service android:name=".push.TwoShareFirebaseMessagingService" android:exported="false">
             <intent-filter><action android:name="com.google.firebase.MESSAGING_EVENT" /></intent-filter>
         </service>
