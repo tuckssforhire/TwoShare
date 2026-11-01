@@ -1,6 +1,10 @@
 package com.twoshare.app.push
 
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.content.Context
+import android.media.AudioAttributes
+import android.os.Build
 import android.provider.Settings
 import com.google.firebase.messaging.FirebaseMessaging
 import com.twoshare.app.data.SupabaseProvider
@@ -13,7 +17,32 @@ import kotlinx.serialization.Serializable
 private data class DevicePushTokenRow(val user_id: String, val token: String, val device_id: String, val platform: String = "android")
 
 object PushNotificationManager {
+    const val CHANNEL_MESSAGES = "twoshare_messages"
+    const val CHANNEL_CALLS = "twolink_calls"
+
+    fun ensureNotificationChannels(context: Context) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        val manager = context.getSystemService(NotificationManager::class.java)
+        manager.createNotificationChannel(
+            NotificationChannel(CHANNEL_MESSAGES, "Messages & activity", NotificationManager.IMPORTANCE_HIGH).apply {
+                description = "TwoShare messages, replies and reactions"
+                enableVibration(true)
+            }
+        )
+        manager.createNotificationChannel(
+            NotificationChannel(CHANNEL_CALLS, "TwoLink calls", NotificationManager.IMPORTANCE_HIGH).apply {
+                description = "Incoming TwoLink voice and video calls"
+                setSound(
+                    Settings.System.DEFAULT_RINGTONE_URI,
+                    AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE).build()
+                )
+                enableVibration(true)
+            }
+        )
+    }
+
     suspend fun registerCurrentDevice(context: Context) {
+        ensureNotificationChannels(context)
         val user = SupabaseProvider.client.auth.currentUserOrNull() ?: return
         val token = FirebaseMessaging.getInstance().token.await()
         SupabaseProvider.client.from("device_push_tokens").upsert(
@@ -24,6 +53,7 @@ object PushNotificationManager {
     }
 
     suspend fun registerToken(context: Context, token: String) {
+        ensureNotificationChannels(context)
         val user = SupabaseProvider.client.auth.currentUserOrNull() ?: return
         SupabaseProvider.client.from("device_push_tokens").upsert(
             DevicePushTokenRow(user.id, token, deviceId(context))
