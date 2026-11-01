@@ -12,6 +12,7 @@ import androidx.compose.ui.unit.dp
 data class VersionNote(val version:String,val items:List<String>)
 
 val twoShareVersionHistory=listOf(
+ VersionNote("1.0.18",listOf("Profile display photo in Account & settings","Tap a quoted reply to scroll back to the original message","Messenger keeps cached messages visible while reconnecting")),
  VersionNote("1.0.17",listOf("Offline-friendly feed: keeps the latest 3 posts ready","Messenger keeps the latest 20 messages ready","Connecting / Online status and automatic refresh after reconnection","Version progress history and What's new after updates")),
  VersionNote("1.0.16",listOf("Large emoji-only messages","Gallery and camera photos in Messenger","Camera photo posting in the feed")),
  VersionNote("1.0.15",listOf("Tap a message to show its sent time","Unread messages divider","Expanded emoji reactions with Android emoji picker","Instant optimistic reactions")),
