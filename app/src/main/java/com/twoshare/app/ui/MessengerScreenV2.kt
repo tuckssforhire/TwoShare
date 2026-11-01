@@ -11,6 +11,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Call
@@ -20,9 +21,12 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
@@ -33,6 +37,8 @@ import com.twoshare.app.model.CallRow
 import com.twoshare.app.model.UiChatMessage
 import java.time.Instant
 import java.time.OffsetDateTime
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.util.UUID
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
@@ -54,21 +60,28 @@ fun MessengerScreenV2(repository: TwoShareRepository, onBack: () -> Unit, onStar
     var replying by remember { mutableStateOf<UiChatMessage?>(null) }
     var editing by remember { mutableStateOf<UiChatMessage?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
+    var unreadDividerId by remember { mutableStateOf<String?>(null) }
+    var initialUnreadCaptured by remember { mutableStateOf(false) }
 
     val timeline = remember(messages, calls) {
         (messages.map { Pair(epoch(it.createdAt), it as Any) } + calls.map { Pair(epoch(it.createdAt), it as Any) }).sortedBy { it.first }
     }
 
     suspend fun refresh() {
-        runCatching { chat.markIncomingRead() }
         val result = runCatching { chat.loadMessages() }
         val history = runCatching { repository.loadCallHistory() }.getOrDefault(emptyList())
         result.onSuccess { server ->
+            if (!initialUnreadCaptured) {
+                val uid = repository.currentUserId()
+                unreadDividerId = server.firstOrNull { it.senderId != uid && it.readAt == null }?.id
+                initialUnreadCaptured = true
+            }
             val pending = messages.filter { it.localState != "sent" }
             val ids = server.mapNotNull { it.clientId }.toSet()
             messages = server + pending.filter { it.clientId !in ids }
             calls = history
             error = null
+            runCatching { chat.markIncomingRead() }
         }.onFailure { calls = history; error = it.localizedMessage ?: "Unable to load messages." }
     }
 
@@ -83,22 +96,19 @@ fun MessengerScreenV2(repository: TwoShareRepository, onBack: () -> Unit, onStar
     fun beginReply(message: UiChatMessage) { replying = message; editing = null }
 
     fun react(message: UiChatMessage, emoji: String) {
-        if (message.localState != "sent") return
+        if (message.localState != "sent" || emoji.isBlank()) return
         val uid = repository.currentUserId() ?: return
         val before = message.reactions
         val users = before[emoji].orEmpty()
         val updated = before.toMutableMap()
-        if (uid in users) {
-            val remaining = users - uid
-            if (remaining.isEmpty()) updated.remove(emoji) else updated[emoji] = remaining
-        } else updated[emoji] = users + uid
+        if (uid in users) { val remaining = users - uid; if (remaining.isEmpty()) updated.remove(emoji) else updated[emoji] = remaining }
+        else updated[emoji] = users + uid
         messages = messages.map { if (it.id == message.id) it.copy(reactions = updated.toMap()) else it }
         scope.launch {
-            runCatching { repository.toggleMessageReaction(message, emoji) }
-                .onFailure {
-                    messages = messages.map { current -> if (current.id == message.id) current.copy(reactions = before) else current }
-                    error = "Reaction failed."
-                }
+            runCatching { repository.toggleMessageReaction(message, emoji) }.onFailure {
+                messages = messages.map { current -> if (current.id == message.id) current.copy(reactions = before) else current }
+                error = "Reaction failed."
+            }
         }
     }
 
@@ -143,11 +153,22 @@ fun MessengerScreenV2(repository: TwoShareRepository, onBack: () -> Unit, onStar
             LazyColumn(state = listState, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 itemsIndexed(timeline) { _, entry ->
                     val item = entry.second
-                    if (item is UiChatMessage) MessageRow(item, repository.currentUserId(), { beginReply(item) }, { editing = item; replying = null; draft = item.body.orEmpty() }, { emoji -> react(item, emoji) }, { failed -> messages = messages.filterNot { it.id == failed.id }; draft = failed.body.orEmpty() })
-                    else CallLine(item as CallRow, repository.currentUserId())
+                    if (item is UiChatMessage) {
+                        if (item.id == unreadDividerId) UnreadDivider()
+                        MessageRow(item, repository.currentUserId(), { beginReply(item) }, { editing = item; replying = null; draft = item.body.orEmpty() }, { emoji -> react(item, emoji) }, { failed -> messages = messages.filterNot { it.id == failed.id }; draft = failed.body.orEmpty() })
+                    } else CallLine(item as CallRow, repository.currentUserId())
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun UnreadDivider() {
+    Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+        HorizontalDivider(Modifier.weight(1f), color = MaterialTheme.colorScheme.primary.copy(alpha = .45f))
+        Text("Unread messages", Modifier.padding(horizontal = 10.dp), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+        HorizontalDivider(Modifier.weight(1f), color = MaterialTheme.colorScheme.primary.copy(alpha = .45f))
     }
 }
 
@@ -169,6 +190,8 @@ private fun MessageRow(message: UiChatMessage, uid: String?, reply: () -> Unit, 
     val mine = message.senderId == uid
     var actions by remember(message.id) { mutableStateOf(false) }
     var edits by remember(message.id) { mutableStateOf(false) }
+    var showTime by remember(message.id) { mutableStateOf(false) }
+    var showEmojiPicker by remember(message.id) { mutableStateOf(false) }
     var dragX by remember(message.id) { mutableFloatStateOf(0f) }
     val x by animateFloatAsState(dragX, label = "reply")
     val receipt = when { message.localState == "sending" -> "Sending…"; message.localState == "failed" -> "Failed"; message.readAt != null -> "Seen"; message.deliveredAt != null -> "Delivered"; else -> "Sent" }
@@ -178,7 +201,7 @@ private fun MessageRow(message: UiChatMessage, uid: String?, reply: () -> Unit, 
     Box(Modifier.fillMaxWidth()) {
         if (dragX > 18f) Text("↩", modifier = Modifier.align(Alignment.CenterStart).padding(start = 8.dp), color = MaterialTheme.colorScheme.primary)
         Column(Modifier.fillMaxWidth().offset { IntOffset(x.roundToInt(), 0) }.pointerInput(message.id) { detectHorizontalDragGestures(onHorizontalDrag = { _, amount -> dragX = (dragX + amount).coerceIn(0f, 100f) }, onDragEnd = { if (dragX >= 58f) reply(); dragX = 0f }, onDragCancel = { dragX = 0f }) }, horizontalAlignment = if (mine) Alignment.End else Alignment.Start) {
-            Surface(color = bubbleColor, shape = if (mine) RoundedCornerShape(20.dp, 20.dp, 6.dp, 20.dp) else RoundedCornerShape(20.dp, 20.dp, 20.dp, 6.dp), modifier = Modifier.widthIn(max = 310.dp).combinedClickable(onClick = {}, onDoubleClick = { react("❤️") }, onLongClick = { actions = true })) {
+            Surface(color = bubbleColor, shape = if (mine) RoundedCornerShape(20.dp, 20.dp, 6.dp, 20.dp) else RoundedCornerShape(20.dp, 20.dp, 20.dp, 6.dp), modifier = Modifier.widthIn(max = 310.dp).combinedClickable(onClick = { showTime = !showTime }, onDoubleClick = { react("❤️") }, onLongClick = { actions = true })) {
                 Column(Modifier.padding(horizontal = 13.dp, vertical = 8.dp)) {
                     message.replyPreview?.let { Surface(color = MaterialTheme.colorScheme.surface.copy(alpha = .55f), shape = RoundedCornerShape(9.dp), modifier = Modifier.padding(bottom = 5.dp)) { Text("↩ $it", Modifier.padding(horizontal = 8.dp, vertical = 5.dp), maxLines = 2, style = MaterialTheme.typography.bodySmall, color = textColor) } }
                     message.mediaUrl?.let { if (message.mediaType == "image") AsyncImage(it, "Shared photo", Modifier.widthIn(max = 280.dp).heightIn(max = 300.dp), contentScale = ContentScale.Crop) }
@@ -188,19 +211,38 @@ private fun MessageRow(message: UiChatMessage, uid: String?, reply: () -> Unit, 
                 }
             }
             if (message.reactions.isNotEmpty()) Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surface, shadowElevation = 1.dp, modifier = Modifier.offset(y = (-5).dp).padding(end = 5.dp)) { Text(message.reactions.entries.joinToString(" ") { "${it.key} ${it.value.size}" }, Modifier.padding(horizontal = 7.dp, vertical = 2.dp), style = MaterialTheme.typography.labelMedium) }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(relative(message.createdAt) + if (mine) " · $receipt" else "", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .62f))
-                TextButton(onClick = { actions = true }, contentPadding = PaddingValues(horizontal = 5.dp), modifier = Modifier.height(25.dp)) { Text("•••") }
-            }
+            if (showTime || message.localState != "sent") Text((if (showTime) absoluteTime(message.createdAt) else "") + if (mine) { if (showTime) " · $receipt" else receipt } else "", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .62f), modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp))
             if (message.localState == "failed") TextButton(onClick = { retry(message) }) { Text("Retry") }
         }
-        if (actions) AlertDialog(onDismissRequest = { actions = false }, title = { Text("Message") }, text = { Column {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) { reactionChoices.forEach { emoji -> Text(emoji, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.combinedClickable(onClick = { react(emoji); actions = false }, onLongClick = {})) } }
+        if (actions) AlertDialog(onDismissRequest = { actions = false }, title = { Text("React or message action") }, text = { Column {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+                reactionChoices.forEach { emoji -> Text(emoji, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.combinedClickable(onClick = { react(emoji); actions = false }, onLongClick = {})) }
+                TextButton(onClick = { actions = false; showEmojiPicker = true }, contentPadding = PaddingValues(horizontal = 7.dp)) { Text("+", style = MaterialTheme.typography.headlineSmall) }
+            }
             Spacer(Modifier.height(10.dp))
             TextButton(onClick = { reply(); actions = false }, modifier = Modifier.fillMaxWidth()) { Text("Reply") }
             if (mine && message.localState == "sent" && message.body != null) TextButton(onClick = { edit(); actions = false }, modifier = Modifier.fillMaxWidth()) { Text("Edit") }
         } }, confirmButton = {})
+        if (showEmojiPicker) EmojiPickerDialog(onDismiss = { showEmojiPicker = false }, onEmoji = { react(it); showEmojiPicker = false })
     }
+}
+
+@Composable
+private fun EmojiPickerDialog(onDismiss: () -> Unit, onEmoji: (String) -> Unit) {
+    var emoji by remember { mutableStateOf("") }
+    val focusRequester = remember { FocusRequester() }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Choose any emoji") },
+        text = { Column {
+            Text("Use your Android emoji keyboard to choose any emoji supported by your phone.", style = MaterialTheme.typography.bodySmall)
+            Spacer(Modifier.height(10.dp))
+            OutlinedTextField(value = emoji, onValueChange = { emoji = it.take(16) }, modifier = Modifier.fillMaxWidth().focusRequester(focusRequester), singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text), placeholder = { Text("😀") })
+            LaunchedEffect(Unit) { delay(150); focusRequester.requestFocus() }
+        } },
+        confirmButton = { TextButton(onClick = { if (emoji.isNotBlank()) onEmoji(emoji) }, enabled = emoji.isNotBlank()) { Text("React") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
 }
 
 @Composable
@@ -214,3 +256,4 @@ private fun CallLine(call: CallRow, uid: String?) {
 
 private fun epoch(value: String) = runCatching { OffsetDateTime.parse(value).toInstant().toEpochMilli() }.recoverCatching { Instant.parse(value).toEpochMilli() }.getOrDefault(0L)
 private fun relative(value: String) = DateUtils.getRelativeTimeSpanString(epoch(value), System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS).toString()
+private fun absoluteTime(value: String): String = runCatching { Instant.ofEpochMilli(epoch(value)).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("MMM d, h:mm a")) }.getOrDefault("")
