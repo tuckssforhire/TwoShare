@@ -10,13 +10,23 @@ import java.time.Instant
 class PresenceRepository {
     private val supabase get() = SupabaseProvider.client
 
-    suspend fun heartbeat(): Boolean = runCatching {
-        val uid = supabase.auth.currentUserOrNull()?.id ?: return false
-        supabase.from("profiles").update({
-            set("last_active_at", Instant.now().toString())
-        }) { filter { eq("id", uid) } }
-        true
-    }.getOrDefault(false)
+    companion object {
+        private const val HEARTBEAT_MIN_INTERVAL_MS = 20_000L
+        @Volatile private var lastHeartbeatAtMs = 0L
+    }
+
+    suspend fun heartbeat(): Boolean {
+        val nowMs = System.currentTimeMillis()
+        if (nowMs - lastHeartbeatAtMs < HEARTBEAT_MIN_INTERVAL_MS) return true
+        return runCatching {
+            val uid = supabase.auth.currentUserOrNull()?.id ?: return false
+            supabase.from("profiles").update({
+                set("last_active_at", Instant.now().toString())
+            }) { filter { eq("id", uid) } }
+            lastHeartbeatAtMs = nowMs
+            true
+        }.getOrDefault(false)
+    }
 
     suspend fun partner(): ProfileRow? = runCatching {
         val uid = supabase.auth.currentUserOrNull()?.id ?: return null
