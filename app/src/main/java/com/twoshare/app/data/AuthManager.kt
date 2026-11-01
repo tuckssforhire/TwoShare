@@ -13,7 +13,7 @@ import java.security.MessageDigest
 
 class AuthManager {
     private val supabase = SupabaseProvider.client
-    private val allowedEmails = setOf("eddierodwards@gmail.com", "misamitchlailarene@gmail.com", "mir4arteezy@gmil.com")
+    private val allowedEmails = setOf("eddierodwards@gmail.com", "misamitchlailarene@gmail.com")
 
     suspend fun restoreTrustedSession(context: Context): Boolean {
         val user = supabase.auth.currentUserOrNull() ?: return false
