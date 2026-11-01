@@ -30,7 +30,20 @@ data class MessageRow(
 @Serializable data class MessageReactionInsert(@SerialName("message_id") val messageId: String, @SerialName("user_id") val userId: String, val emoji: String)
 
 @Serializable
-data class CallRow(val id: String, @SerialName("caller_id") val callerId: String, @SerialName("callee_id") val calleeId: String, @SerialName("is_video") val isVideo: Boolean, val status: String, @SerialName("offer_sdp") val offerSdp: String? = null, @SerialName("answer_sdp") val answerSdp: String? = null, @SerialName("created_at") val createdAt: String, @SerialName("answered_at") val answeredAt: String? = null, @SerialName("ended_at") val endedAt: String? = null)
+data class CallRow(
+    val id: String,
+    @SerialName("caller_id") val callerId: String,
+    @SerialName("callee_id") val calleeId: String,
+    @SerialName("is_video") val isVideo: Boolean,
+    val status: String,
+    @SerialName("offer_sdp") val offerSdp: String? = null,
+    @SerialName("answer_sdp") val answerSdp: String? = null,
+    @SerialName("created_at") val createdAt: String,
+    @SerialName("answered_at") val answeredAt: String? = null,
+    @SerialName("connected_at") val connectedAt: String? = null,
+    @SerialName("ended_at") val endedAt: String? = null,
+    val transport: String? = null
+)
 @Serializable data class CallInsert(@SerialName("caller_id") val callerId: String, @SerialName("callee_id") val calleeId: String, @SerialName("is_video") val isVideo: Boolean)
 
 data class FeedPost(val id: String, val userId: String, val userName: String, val imagePaths: List<String>, val imageUrls: List<String>, val caption: String?, val createdAt: String, val likedBy: Set<String>) {
