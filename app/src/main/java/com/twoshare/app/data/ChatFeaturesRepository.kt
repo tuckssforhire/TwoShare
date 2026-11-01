@@ -62,58 +62,35 @@ class ChatFeaturesRepository(private val base: TwoShareRepository) {
 
     suspend fun loadMessages(): List<UiChatMessage> {
         base.requireAllowedUser()
-
-        // Messages are the only essential source. Optional Messenger enhancements must never
-        // make the whole chat screen unusable if a legacy row/table cannot be decoded.
         val rows = base.retryNetworkRead {
             supabase.from("messages").select { order("created_at", Order.ASCENDING) }.decodeList<ChatMessageRow>()
         }
-
         val profiles = runCatching {
-            base.retryNetworkRead {
-                supabase.from("profiles").select().decodeList<ProfileRow>().associateBy { it.id }
-            }
+            base.retryNetworkRead { supabase.from("profiles").select().decodeList<ProfileRow>().associateBy { it.id } }
         }.getOrDefault(emptyMap())
-
         val reactions = runCatching {
-            base.retryNetworkRead {
-                supabase.from("message_reactions").select().decodeList<MessageReactionRow>().groupBy { it.messageId }
-            }
+            base.retryNetworkRead { supabase.from("message_reactions").select().decodeList<MessageReactionRow>().groupBy { it.messageId } }
         }.getOrDefault(emptyMap())
-
         val edits = runCatching {
-            base.retryNetworkRead {
-                supabase.from("message_edits").select { order("edited_at", Order.ASCENDING) }.decodeList<EditRow>().groupBy { it.messageId }
-            }
+            base.retryNetworkRead { supabase.from("message_edits").select { order("edited_at", Order.ASCENDING) }.decodeList<EditRow>().groupBy { it.messageId } }
         }.getOrDefault(emptyMap())
-
         val byId = rows.associateBy { it.id }
         val bucket = supabase.storage.from("twoshare")
         return rows.mapNotNull { row ->
             runCatching {
                 val mediaUrl = row.mediaPath?.let { path ->
-                    urlCache[path] ?: runCatching {
-                        base.retryNetworkRead { bucket.createSignedUrl(path, 24.hours) }
-                    }.getOrNull()?.also { urlCache[path] = it }
+                    urlCache[path] ?: runCatching { base.retryNetworkRead { bucket.createSignedUrl(path, 24.hours) } }.getOrNull()?.also { urlCache[path] = it }
                 }
                 val reply = row.replyToId?.let(byId::get)
                 UiChatMessage(
-                    id = row.id,
-                    senderId = row.senderId,
+                    id = row.id, senderId = row.senderId,
                     senderName = profiles[row.senderId]?.displayName ?: if (row.senderId == base.currentUserId()) "You" else "User",
-                    body = row.body,
-                    mediaType = row.mediaType,
-                    mediaUrl = mediaUrl,
-                    createdAt = row.createdAt,
-                    readAt = row.readAt,
+                    body = row.body, mediaType = row.mediaType, mediaUrl = mediaUrl, createdAt = row.createdAt, readAt = row.readAt,
                     reactions = reactions[row.id].orEmpty().groupBy { it.emoji }.mapValues { e -> e.value.map { it.userId }.toSet() },
-                    clientId = row.clientId,
-                    replyToId = row.replyToId,
+                    clientId = row.clientId, replyToId = row.replyToId,
                     replyPreview = reply?.body?.take(120) ?: if (reply?.mediaType != null) "${reply.mediaType} attachment" else null,
-                    editedAt = row.editedAt,
-                    deliveredAt = row.deliveredAt,
-                    editHistory = edits[row.id].orEmpty().map { MessageEditVersion(it.oldBody.orEmpty(), it.editedAt) },
-                    localState = "sent"
+                    editedAt = row.editedAt, deliveredAt = row.deliveredAt,
+                    editHistory = edits[row.id].orEmpty().map { MessageEditVersion(it.oldBody.orEmpty(), it.editedAt) }, localState = "sent"
                 )
             }.getOrNull()
         }
@@ -140,6 +117,7 @@ class ChatFeaturesRepository(private val base: TwoShareRepository) {
             mediaMime = mime
         }
         val row = supabase.from("messages").insert(ChatMessageInsert(uid, cleaned, mediaPath, mediaType, mediaMime, clientId, replyToId)) { select() }.decodeSingle<ChatMessageRow>()
+        PushSender.notifyOther(if (replyToId == null) "message" else "reply", messageId = row.id)
         return UiChatMessage(row.id, uid, "You", row.body, row.mediaType, attachmentUri?.toString(), row.createdAt, row.readAt, emptyMap(), row.clientId, row.replyToId, null, row.editedAt, row.deliveredAt, emptyList(), "sent")
     }
 
