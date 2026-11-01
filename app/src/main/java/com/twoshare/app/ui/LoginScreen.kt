@@ -9,7 +9,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -35,6 +34,20 @@ fun LoginScreen(authManager: AuthManager, onSignedIn: () -> Unit) {
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var info by remember { mutableStateOf<String?>(null) }
+    val loginPhoto = remember {
+        listOf(
+            R.drawable.login_photo_01,
+            R.drawable.login_photo_02,
+            R.drawable.login_photo_03,
+            R.drawable.login_photo_04,
+            R.drawable.login_photo_05,
+            R.drawable.login_photo_06,
+            R.drawable.login_photo_07,
+            R.drawable.login_photo_08,
+            R.drawable.login_photo_09,
+            R.drawable.login_photo_10
+        ).random()
+    }
 
     error?.let { message ->
         AlertDialog(onDismissRequest = { error = null }, title = { Text("Unable to continue") }, text = { Text(message) }, confirmButton = { Button(onClick = { error = null }) { Text("OK") } })
@@ -44,26 +57,19 @@ fun LoginScreen(authManager: AuthManager, onSignedIn: () -> Unit) {
     }
 
     Box(Modifier.fillMaxSize().background(Color(0xFFF8EEF2))) {
-        // Soft memory-wall collage. Photos stay unedited; Compose only crops them to the cards.
-        Column(Modifier.fillMaxWidth().align(Alignment.TopCenter)) {
-            Row(Modifier.fillMaxWidth().height(150.dp)) {
-                LoginPhoto(R.drawable.login_photo_02, Modifier.weight(1f).fillMaxHeight())
-                LoginPhoto(R.drawable.login_photo_05, Modifier.weight(1f).fillMaxHeight())
-                LoginPhoto(R.drawable.login_photo_09, Modifier.weight(1f).fillMaxHeight())
-            }
-            Row(Modifier.fillMaxWidth().height(120.dp)) {
-                LoginPhoto(R.drawable.login_photo_03, Modifier.weight(1f).fillMaxHeight())
-                LoginPhoto(R.drawable.login_photo_10, Modifier.weight(1.25f).fillMaxHeight())
-                LoginPhoto(R.drawable.login_photo_07, Modifier.weight(1f).fillMaxHeight())
-            }
-        }
+        Image(
+            painter = painterResource(loginPhoto),
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxWidth().fillMaxHeight(0.55f).align(Alignment.TopCenter)
+        )
 
         Box(
             Modifier.fillMaxSize().background(
                 Brush.verticalGradient(
                     0f to Color.Transparent,
-                    .25f to Color(0x55F8EEF2),
-                    .40f to Color(0xFFF8EEF2),
+                    .28f to Color(0x22F8EEF2),
+                    .48f to Color(0xFFF8EEF2),
                     1f to Color(0xFFF8EEF2)
                 )
             )
@@ -140,16 +146,6 @@ fun LoginScreen(authManager: AuthManager, onSignedIn: () -> Unit) {
             }
         }
     }
-}
-
-@Composable
-private fun LoginPhoto(drawable: Int, modifier: Modifier = Modifier) {
-    Image(
-        painter = painterResource(drawable),
-        contentDescription = null,
-        contentScale = ContentScale.Crop,
-        modifier = modifier.padding(2.dp).clip(RoundedCornerShape(10.dp))
-    )
 }
 
 private fun friendlyAuthError(throwable: Throwable): String {
