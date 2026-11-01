@@ -1,6 +1,7 @@
 package com.twoshare.app.data
 
 import com.twoshare.app.model.ProfileRow
+import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.functions.functions
 import io.github.jan.supabase.postgrest.from
 import kotlinx.serialization.json.buildJsonObject
