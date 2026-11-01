@@ -12,11 +12,16 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
@@ -65,5 +70,15 @@ class MainActivity:FragmentActivity(){
  private fun requestBiometricUnlock(onSuccess:()->Unit,onError:(String)->Unit){val executor=ContextCompat.getMainExecutor(this);val prompt=BiometricPrompt(this,executor,object:BiometricPrompt.AuthenticationCallback(){override fun onAuthenticationSucceeded(result:BiometricPrompt.AuthenticationResult){super.onAuthenticationSucceeded(result);onSuccess()};override fun onAuthenticationError(errorCode:Int,errString:CharSequence){super.onAuthenticationError(errorCode,errString);onError(if(errorCode in listOf(BiometricPrompt.ERROR_NEGATIVE_BUTTON,BiometricPrompt.ERROR_USER_CANCELED,BiometricPrompt.ERROR_CANCELED))"Biometric unlock cancelled." else errString.toString().ifBlank{"Biometric unlock failed."})};override fun onAuthenticationFailed(){super.onAuthenticationFailed();onError("Fingerprint or face not recognized. Try again.")}});prompt.authenticate(BiometricPrompt.PromptInfo.Builder().setTitle("Unlock TwoShare").setSubtitle("Use your fingerprint or face").setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_WEAK).setNegativeButtonText("Use account login").build())}
  companion object{private const val BIOMETRIC_GRACE_MS=5*60*1000L}
 }
-@Composable private fun BiometricUnlockScreen(error:String?,onUnlock:()->Unit,onUseAccountLogin:()->Unit){Box(Modifier.fillMaxSize().padding(28.dp),contentAlignment=Alignment.Center){Column(horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.Center){Image(painterResource(R.drawable.twoshare_icon),"TwoShare logo",Modifier.size(120.dp));Spacer(Modifier.height(18.dp));Text("TwoShare locked",style=MaterialTheme.typography.headlineSmall);Spacer(Modifier.height(6.dp));Text("Unlock this trusted phone with fingerprint or face.");error?.let{Spacer(Modifier.height(12.dp));Text(it,color=MaterialTheme.colorScheme.error)};Spacer(Modifier.height(20.dp));Button(onClick=onUnlock){Text("Unlock with biometrics")};Spacer(Modifier.height(8.dp));OutlinedButton(onClick=onUseAccountLogin){Text("Use account login")}}}}
+@Composable private fun BiometricUnlockScreen(error:String?,onUnlock:()->Unit,onUseAccountLogin:()->Unit){
+ val loginPhoto=remember{listOf(R.drawable.login_photo_01,R.drawable.login_photo_02,R.drawable.login_photo_03,R.drawable.login_photo_04,R.drawable.login_photo_05,R.drawable.login_photo_06,R.drawable.login_photo_07,R.drawable.login_photo_08,R.drawable.login_photo_09,R.drawable.login_photo_10).random()}
+ Box(Modifier.fillMaxSize().background(Color(0xFFF8EEF2))){
+  Image(painterResource(loginPhoto),null,Modifier.fillMaxWidth().fillMaxHeight(.55f).align(Alignment.TopCenter),contentScale=ContentScale.Crop)
+  Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to Color.Transparent,.28f to Color(0x22F8EEF2),.48f to Color(0xFFF8EEF2),1f to Color(0xFFF8EEF2))))
+  Column(Modifier.fillMaxWidth().align(Alignment.BottomCenter).padding(horizontal=24.dp,vertical=28.dp),horizontalAlignment=Alignment.CenterHorizontally){
+   Image(painterResource(R.drawable.twoshare_icon),"TwoShare logo",Modifier.size(82.dp));Spacer(Modifier.height(12.dp));Text("TwoShare locked",style=MaterialTheme.typography.headlineSmall);Spacer(Modifier.height(6.dp));Text("Unlock this trusted phone with fingerprint or face.",color=MaterialTheme.colorScheme.onSurfaceVariant);Spacer(Modifier.height(16.dp))
+   Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(24.dp),colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surface.copy(alpha=.96f)),elevation=CardDefaults.cardElevation(defaultElevation=6.dp)){Column(Modifier.fillMaxWidth().padding(18.dp),horizontalAlignment=Alignment.CenterHorizontally){error?.let{Text(it,color=MaterialTheme.colorScheme.error);Spacer(Modifier.height(12.dp))};Button(onClick=onUnlock,modifier=Modifier.fillMaxWidth().height(50.dp),shape=RoundedCornerShape(14.dp)){Text("Unlock with biometrics")};Spacer(Modifier.height(8.dp));OutlinedButton(onClick=onUseAccountLogin,modifier=Modifier.fillMaxWidth()){Text("Use account login")}}}
+  }
+ }
+}
 @Composable private fun TwoShareStartupScreen(){Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center){Column(horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.Center){Image(painterResource(R.drawable.twoshare_icon),"TwoShare logo",Modifier.size(144.dp));Spacer(Modifier.height(18.dp));Text("TwoShare",style=MaterialTheme.typography.headlineLarge);Spacer(Modifier.height(6.dp));Text("Private sharing for two",style=MaterialTheme.typography.bodyMedium)}}}
