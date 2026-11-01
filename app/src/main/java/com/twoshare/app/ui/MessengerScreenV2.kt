@@ -1,6 +1,15 @@
 package com.twoshare.app.ui
 
+import android.Manifest
+import android.content.ContentValues
+import android.content.Context
+import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.net.Uri
+import android.provider.MediaStore
 import android.text.format.DateUtils
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -15,6 +24,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.Photo
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.VideoCall
 import androidx.compose.material3.*
@@ -29,6 +40,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import coil.compose.AsyncImage
 import com.twoshare.app.data.ChatFeaturesRepository
 import com.twoshare.app.data.TwoShareRepository
@@ -57,6 +70,7 @@ fun MessengerScreenV2(repository: TwoShareRepository, onBack: () -> Unit, onStar
     var messages by remember { mutableStateOf(emptyList<UiChatMessage>()) }
     var calls by remember { mutableStateOf(emptyList<CallRow>()) }
     var draft by remember { mutableStateOf("") }
+    var attachment by remember { mutableStateOf<Uri?>(null) }
     var replying by remember { mutableStateOf<UiChatMessage?>(null) }
     var editing by remember { mutableStateOf<UiChatMessage?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -93,23 +107,31 @@ fun MessengerScreenV2(repository: TwoShareRepository, onBack: () -> Unit, onStar
         if ((replying != null || editing != null) && timeline.isNotEmpty()) { delay(100); runCatching { listState.animateScrollToItem(timeline.lastIndex) } }
     }
 
-    fun beginReply(message: UiChatMessage) { replying = message; editing = null }
+    val mediaPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        attachment = uri
+        if (uri != null) runCatching { context.contentResolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+    }
+    val camera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicturePreview()) { bitmap ->
+        if (bitmap != null) attachment = saveCameraBitmap(context, bitmap)
+    }
+    val cameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) camera.launch(null) else error = "Camera permission is needed to take a photo."
+    }
+    fun openCamera() {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) camera.launch(null)
+        else cameraPermission.launch(Manifest.permission.CAMERA)
+    }
 
+    fun beginReply(message: UiChatMessage) { replying = message; editing = null }
     fun react(message: UiChatMessage, emoji: String) {
         if (message.localState != "sent" || emoji.isBlank()) return
         val uid = repository.currentUserId() ?: return
         val before = message.reactions
         val users = before[emoji].orEmpty()
         val updated = before.toMutableMap()
-        if (uid in users) { val remaining = users - uid; if (remaining.isEmpty()) updated.remove(emoji) else updated[emoji] = remaining }
-        else updated[emoji] = users + uid
+        if (uid in users) { val remaining = users - uid; if (remaining.isEmpty()) updated.remove(emoji) else updated[emoji] = remaining } else updated[emoji] = users + uid
         messages = messages.map { if (it.id == message.id) it.copy(reactions = updated.toMap()) else it }
-        scope.launch {
-            runCatching { repository.toggleMessageReaction(message, emoji) }.onFailure {
-                messages = messages.map { current -> if (current.id == message.id) current.copy(reactions = before) else current }
-                error = "Reaction failed."
-            }
-        }
+        scope.launch { runCatching { repository.toggleMessageReaction(message, emoji) }.onFailure { messages = messages.map { current -> if (current.id == message.id) current.copy(reactions = before) else current }; error = "Reaction failed." } }
     }
 
     fun send() {
@@ -119,32 +141,35 @@ fun MessengerScreenV2(repository: TwoShareRepository, onBack: () -> Unit, onStar
             scope.launch { runCatching { chat.editMessage(edit, text) }.onSuccess { refresh() }.onFailure { error = "Edit failed: ${it.localizedMessage}" } }
             return
         }
-        if (draft.isBlank()) return
+        if (draft.isBlank() && attachment == null) return
         val uid = repository.currentUserId() ?: return
-        val text = draft; val reply = replying; val clientId = UUID.randomUUID().toString()
-        val local = UiChatMessage("local-$clientId", uid, "You", text.trim(), null, null, Instant.now().toString(), null, emptyMap(), clientId, reply?.id, reply?.body?.take(120), null, null, emptyList(), "sending")
-        messages = messages + local; draft = ""; replying = null
+        val text = draft
+        val selected = attachment
+        val reply = replying
+        val clientId = UUID.randomUUID().toString()
+        val local = UiChatMessage("local-$clientId", uid, "You", text.trim().ifBlank { null }, if (selected != null) "image" else null, selected?.toString(), Instant.now().toString(), null, emptyMap(), clientId, reply?.id, reply?.body?.take(120), null, null, emptyList(), "sending")
+        messages = messages + local; draft = ""; attachment = null; replying = null
         scope.launch {
-            runCatching { chat.sendMessage(context, text, null, clientId, reply?.id) }
+            runCatching { chat.sendMessage(context, text, selected, clientId, reply?.id) }
                 .onSuccess { sent -> messages = messages.map { if (it.clientId == clientId) sent.copy(replyPreview = local.replyPreview) else it }; refresh() }
                 .onFailure { throwable -> messages = messages.map { if (it.clientId == clientId) it.copy(localState = "failed") else it }; error = throwable.localizedMessage ?: "Message failed." }
         }
     }
 
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
+    Scaffold(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
         topBar = { TopAppBar(colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface), title = { Column { Text("TwoShare", style = MaterialTheme.typography.titleLarge); Text("Just the two of you", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary) } }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Back to feed") } }, actions = {
             FilledTonalIconButton(onClick = { scope.launch { runCatching { repository.createOutgoingCall(false) }.onSuccess { onStartCall(it, false) } } }) { Icon(Icons.Default.Call, "Voice call") }
-            Spacer(Modifier.width(5.dp))
-            FilledTonalIconButton(onClick = { scope.launch { runCatching { repository.createOutgoingCall(true) }.onSuccess { onStartCall(it, false) } } }) { Icon(Icons.Default.VideoCall, "Video call") }
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(5.dp)); FilledTonalIconButton(onClick = { scope.launch { runCatching { repository.createOutgoingCall(true) }.onSuccess { onStartCall(it, false) } } }) { Icon(Icons.Default.VideoCall, "Video call") }; Spacer(Modifier.width(8.dp))
         }) },
         bottomBar = { Surface(shadowElevation = 6.dp, color = MaterialTheme.colorScheme.surface) { Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 9.dp)) {
             replying?.let { Banner("Replying to ${it.senderName}", it.body.orEmpty()) { replying = null } }
             editing?.let { Banner("Editing message", it.body.orEmpty()) { editing = null; draft = "" } }
-            Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            attachment?.let { uri -> Row(Modifier.fillMaxWidth().padding(bottom = 5.dp), verticalAlignment = Alignment.CenterVertically) { AsyncImage(uri, "Selected image", Modifier.size(54.dp), contentScale = ContentScale.Crop); Spacer(Modifier.width(8.dp)); Text("Photo ready", Modifier.weight(1f), style = MaterialTheme.typography.labelMedium); TextButton(onClick = { attachment = null }) { Text("Remove") } } }
+            Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                IconButton(onClick = { mediaPicker.launch(arrayOf("image/*")) }, enabled = editing == null) { Icon(Icons.Default.Photo, "Choose image") }
+                IconButton(onClick = ::openCamera, enabled = editing == null) { Icon(Icons.Default.CameraAlt, "Take photo") }
                 OutlinedTextField(value = draft, onValueChange = { draft = it.take(2000) }, modifier = Modifier.weight(1f), placeholder = { Text(if (editing == null) "Message…" else "Edit message…") }, maxLines = 4, shape = RoundedCornerShape(24.dp))
-                FilledIconButton(onClick = ::send, enabled = draft.isNotBlank(), modifier = Modifier.size(48.dp)) { Icon(Icons.Default.Send, "Send") }
+                FilledIconButton(onClick = ::send, enabled = draft.isNotBlank() || (attachment != null && editing == null), modifier = Modifier.size(48.dp)) { Icon(Icons.Default.Send, "Send") }
             }
         } } }
     ) { padding ->
@@ -163,26 +188,9 @@ fun MessengerScreenV2(repository: TwoShareRepository, onBack: () -> Unit, onStar
     }
 }
 
-@Composable
-private fun UnreadDivider() {
-    Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-        HorizontalDivider(Modifier.weight(1f), color = MaterialTheme.colorScheme.primary.copy(alpha = .45f))
-        Text("Unread messages", Modifier.padding(horizontal = 10.dp), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-        HorizontalDivider(Modifier.weight(1f), color = MaterialTheme.colorScheme.primary.copy(alpha = .45f))
-    }
-}
+@Composable private fun UnreadDivider() { Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) { HorizontalDivider(Modifier.weight(1f), color = MaterialTheme.colorScheme.primary.copy(alpha = .45f)); Text("Unread messages", Modifier.padding(horizontal = 10.dp), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary); HorizontalDivider(Modifier.weight(1f), color = MaterialTheme.colorScheme.primary.copy(alpha = .45f)) } }
 
-@Composable
-private fun Banner(title: String, text: String, close: () -> Unit) {
-    Surface(color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = .55f), shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
-        Row(Modifier.padding(9.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.width(3.dp).height(30.dp).background(MaterialTheme.colorScheme.primary, RoundedCornerShape(4.dp)))
-            Spacer(Modifier.width(8.dp))
-            Column(Modifier.weight(1f)) { Text(title, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary); Text(text.take(90), maxLines = 1, style = MaterialTheme.typography.bodySmall) }
-            TextButton(onClick = close) { Text("×") }
-        }
-    }
-}
+@Composable private fun Banner(title: String, text: String, close: () -> Unit) { Surface(color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = .55f), shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)) { Row(Modifier.padding(9.dp), verticalAlignment = Alignment.CenterVertically) { Box(Modifier.width(3.dp).height(30.dp).background(MaterialTheme.colorScheme.primary, RoundedCornerShape(4.dp))); Spacer(Modifier.width(8.dp)); Column(Modifier.weight(1f)) { Text(title, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary); Text(text.take(90), maxLines = 1, style = MaterialTheme.typography.bodySmall) }; TextButton(onClick = close) { Text("×") } } } }
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -197,6 +205,8 @@ private fun MessageRow(message: UiChatMessage, uid: String?, reply: () -> Unit, 
     val receipt = when { message.localState == "sending" -> "Sending…"; message.localState == "failed" -> "Failed"; message.readAt != null -> "Seen"; message.deliveredAt != null -> "Delivered"; else -> "Sent" }
     val bubbleColor = if (mine) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh
     val textColor = if (mine) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+    val body = message.body.orEmpty()
+    val pureEmojiCount = remember(body) { pureEmojiCount(body) }
 
     Box(Modifier.fillMaxWidth()) {
         if (dragX > 18f) Text("↩", modifier = Modifier.align(Alignment.CenterStart).padding(start = 8.dp), color = MaterialTheme.colorScheme.primary)
@@ -205,7 +215,10 @@ private fun MessageRow(message: UiChatMessage, uid: String?, reply: () -> Unit, 
                 Column(Modifier.padding(horizontal = 13.dp, vertical = 8.dp)) {
                     message.replyPreview?.let { Surface(color = MaterialTheme.colorScheme.surface.copy(alpha = .55f), shape = RoundedCornerShape(9.dp), modifier = Modifier.padding(bottom = 5.dp)) { Text("↩ $it", Modifier.padding(horizontal = 8.dp, vertical = 5.dp), maxLines = 2, style = MaterialTheme.typography.bodySmall, color = textColor) } }
                     message.mediaUrl?.let { if (message.mediaType == "image") AsyncImage(it, "Shared photo", Modifier.widthIn(max = 280.dp).heightIn(max = 300.dp), contentScale = ContentScale.Crop) }
-                    message.body?.let { Text(it, style = MaterialTheme.typography.bodyLarge, color = textColor) }
+                    if (body.isNotBlank()) {
+                        if (pureEmojiCount > 0) Text(body, fontSize = when { pureEmojiCount <= 3 -> 44.sp; pureEmojiCount <= 6 -> 34.sp; pureEmojiCount <= 12 -> 27.sp; else -> 22.sp }, lineHeight = when { pureEmojiCount <= 3 -> 50.sp; pureEmojiCount <= 6 -> 40.sp; else -> 31.sp }, color = textColor)
+                        else Text(body, style = MaterialTheme.typography.bodyLarge, color = textColor)
+                    }
                     if (message.editedAt != null) TextButton(onClick = { edits = !edits }, contentPadding = PaddingValues(0.dp), modifier = Modifier.height(22.dp), colors = ButtonDefaults.textButtonColors(contentColor = textColor.copy(alpha = .65f))) { Text(if (edits) "Hide edits" else "Edited", style = MaterialTheme.typography.labelSmall) }
                     if (edits) message.editHistory.asReversed().forEach { Text("Previous: ${it.body}", style = MaterialTheme.typography.bodySmall, color = textColor.copy(alpha = .65f)) }
                 }
@@ -214,44 +227,36 @@ private fun MessageRow(message: UiChatMessage, uid: String?, reply: () -> Unit, 
             if (showTime || message.localState != "sent") Text((if (showTime) absoluteTime(message.createdAt) else "") + if (mine) { if (showTime) " · $receipt" else receipt } else "", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .62f), modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp))
             if (message.localState == "failed") TextButton(onClick = { retry(message) }) { Text("Retry") }
         }
-        if (actions) AlertDialog(onDismissRequest = { actions = false }, title = { Text("React or message action") }, text = { Column {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
-                reactionChoices.forEach { emoji -> Text(emoji, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.combinedClickable(onClick = { react(emoji); actions = false }, onLongClick = {})) }
-                TextButton(onClick = { actions = false; showEmojiPicker = true }, contentPadding = PaddingValues(horizontal = 7.dp)) { Text("+", style = MaterialTheme.typography.headlineSmall) }
-            }
-            Spacer(Modifier.height(10.dp))
-            TextButton(onClick = { reply(); actions = false }, modifier = Modifier.fillMaxWidth()) { Text("Reply") }
-            if (mine && message.localState == "sent" && message.body != null) TextButton(onClick = { edit(); actions = false }, modifier = Modifier.fillMaxWidth()) { Text("Edit") }
-        } }, confirmButton = {})
+        if (actions) AlertDialog(onDismissRequest = { actions = false }, title = { Text("React or message action") }, text = { Column { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) { reactionChoices.forEach { emoji -> Text(emoji, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.combinedClickable(onClick = { react(emoji); actions = false }, onLongClick = {})) }; TextButton(onClick = { actions = false; showEmojiPicker = true }, contentPadding = PaddingValues(horizontal = 7.dp)) { Text("+", style = MaterialTheme.typography.headlineSmall) } }; Spacer(Modifier.height(10.dp)); TextButton(onClick = { reply(); actions = false }, modifier = Modifier.fillMaxWidth()) { Text("Reply") }; if (mine && message.localState == "sent" && message.body != null) TextButton(onClick = { edit(); actions = false }, modifier = Modifier.fillMaxWidth()) { Text("Edit") } } }, confirmButton = {})
         if (showEmojiPicker) EmojiPickerDialog(onDismiss = { showEmojiPicker = false }, onEmoji = { react(it); showEmojiPicker = false })
     }
 }
 
-@Composable
-private fun EmojiPickerDialog(onDismiss: () -> Unit, onEmoji: (String) -> Unit) {
-    var emoji by remember { mutableStateOf("") }
-    val focusRequester = remember { FocusRequester() }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Choose any emoji") },
-        text = { Column {
-            Text("Use your Android emoji keyboard to choose any emoji supported by your phone.", style = MaterialTheme.typography.bodySmall)
-            Spacer(Modifier.height(10.dp))
-            OutlinedTextField(value = emoji, onValueChange = { emoji = it.take(16) }, modifier = Modifier.fillMaxWidth().focusRequester(focusRequester), singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text), placeholder = { Text("😀") })
-            LaunchedEffect(Unit) { delay(150); focusRequester.requestFocus() }
-        } },
-        confirmButton = { TextButton(onClick = { if (emoji.isNotBlank()) onEmoji(emoji) }, enabled = emoji.isNotBlank()) { Text("React") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
-    )
-}
+@Composable private fun EmojiPickerDialog(onDismiss: () -> Unit, onEmoji: (String) -> Unit) { var emoji by remember { mutableStateOf("") }; val focusRequester = remember { FocusRequester() }; AlertDialog(onDismissRequest = onDismiss, title = { Text("Choose any emoji") }, text = { Column { Text("Use your Android emoji keyboard to choose any emoji supported by your phone.", style = MaterialTheme.typography.bodySmall); Spacer(Modifier.height(10.dp)); OutlinedTextField(value = emoji, onValueChange = { emoji = it.take(16) }, modifier = Modifier.fillMaxWidth().focusRequester(focusRequester), singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text), placeholder = { Text("😀") }); LaunchedEffect(Unit) { delay(150); focusRequester.requestFocus() } } }, confirmButton = { TextButton(onClick = { if (emoji.isNotBlank()) onEmoji(emoji) }, enabled = emoji.isNotBlank()) { Text("React") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }) }
 
-@Composable
-private fun CallLine(call: CallRow, uid: String?) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.Center) {
-        Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = .7f)) {
-            Text("${if (call.callerId == uid) "Outgoing" else "Incoming"} ${if (call.isVideo) "video" else "voice"} TwoLink · ${relative(call.createdAt)}", Modifier.padding(horizontal = 12.dp, vertical = 7.dp), style = MaterialTheme.typography.labelMedium)
-        }
+@Composable private fun CallLine(call: CallRow, uid: String?) { Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.Center) { Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = .7f)) { Text("${if (call.callerId == uid) "Outgoing" else "Incoming"} ${if (call.isVideo) "video" else "voice"} TwoLink · ${relative(call.createdAt)}", Modifier.padding(horizontal = 12.dp, vertical = 7.dp), style = MaterialTheme.typography.labelMedium) } } }
+
+private fun saveCameraBitmap(context: Context, bitmap: Bitmap): Uri? = runCatching {
+    val values = ContentValues().apply { put(MediaStore.Images.Media.DISPLAY_NAME, "TwoShare_${System.currentTimeMillis()}.jpg"); put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg") }
+    val uri = context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: return@runCatching null
+    context.contentResolver.openOutputStream(uri)?.use { bitmap.compress(Bitmap.CompressFormat.JPEG, 92, it) } ?: return@runCatching null
+    uri
+}.getOrNull()
+
+private fun pureEmojiCount(text: String): Int {
+    val trimmed = text.trim()
+    if (trimmed.isEmpty()) return 0
+    var count = 0
+    var i = 0
+    while (i < trimmed.length) {
+        val cp = Character.codePointAt(trimmed, i)
+        i += Character.charCount(cp)
+        if (Character.isWhitespace(cp) || cp == 0xFE0F || cp == 0x200D || cp == 0x20E3 || cp in 0x1F3FB..0x1F3FF) continue
+        val emoji = cp in 0x1F000..0x1FAFF || cp in 0x2600..0x27BF || cp in 0x2300..0x23FF || cp in 0x2B00..0x2BFF || cp in 0x1F1E6..0x1F1FF || cp == 0x00A9 || cp == 0x00AE || cp == 0x203C || cp == 0x2049 || cp == 0x2122 || cp == 0x2139 || cp == 0x3030 || cp == 0x303D || cp == 0x3297 || cp == 0x3299 || cp in 0x30..0x39 || cp == 0x23 || cp == 0x2A
+        if (!emoji) return 0
+        count++
     }
+    return count
 }
 
 private fun epoch(value: String) = runCatching { OffsetDateTime.parse(value).toInstant().toEpochMilli() }.recoverCatching { Instant.parse(value).toEpochMilli() }.getOrDefault(0L)
