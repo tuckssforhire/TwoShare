@@ -9,7 +9,7 @@ plugins {
 android {
     namespace = "com.twoshare.app"
     compileSdk = 36
-    defaultConfig { applicationId = "com.twoshare.app"; minSdk = 26; targetSdk = 36; versionCode = 33; versionName = "1.0.9" }
+    defaultConfig { applicationId = "com.twoshare.app"; minSdk = 26; targetSdk = 36; versionCode = 34; versionName = "1.0.10" }
     signingConfigs { getByName("debug") { storeFile = file("${System.getProperty("user.home")}/.android/debug.keystore"); storePassword = "android"; keyAlias = "androiddebugkey"; keyPassword = "android" } }
     buildTypes { getByName("debug") { signingConfig = signingConfigs.getByName("debug") }; getByName("release") { isDebuggable = false; isMinifyEnabled = false; signingConfig = signingConfigs.getByName("debug") } }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
