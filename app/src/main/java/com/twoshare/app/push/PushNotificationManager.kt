@@ -4,9 +4,11 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
 import android.media.AudioAttributes
+import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import com.google.firebase.messaging.FirebaseMessaging
+import com.twoshare.app.R
 import com.twoshare.app.data.SupabaseProvider
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.postgrest.from
@@ -18,7 +20,8 @@ private data class DevicePushTokenRow(val user_id: String, val token: String, va
 
 object PushNotificationManager {
     const val CHANNEL_MESSAGES = "twoshare_messages"
-    const val CHANNEL_CALLS = "twolink_calls"
+    // v2 intentionally forces Android to create a fresh channel with the custom sound.
+    const val CHANNEL_CALLS = "twolink_calls_jazz_v2"
 
     fun ensureNotificationChannels(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
@@ -29,11 +32,12 @@ object PushNotificationManager {
                 enableVibration(true)
             }
         )
+        val ringtoneUri = Uri.parse("android.resource://${context.packageName}/${R.raw.twolink_smooth_jazz}")
         manager.createNotificationChannel(
             NotificationChannel(CHANNEL_CALLS, "TwoLink calls", NotificationManager.IMPORTANCE_HIGH).apply {
                 description = "Incoming TwoLink voice and video calls"
                 setSound(
-                    Settings.System.DEFAULT_RINGTONE_URI,
+                    ringtoneUri,
                     AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE).build()
                 )
                 enableVibration(true)
