@@ -1,7 +1,9 @@
 package com.twoshare.app.push
 
+import android.app.ActivityManager
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.content.Context
 import android.content.Intent
 import androidx.core.app.NotificationCompat
 import com.google.firebase.messaging.FirebaseMessagingService
@@ -26,9 +28,17 @@ class TwoShareFirebaseMessagingService : FirebaseMessagingService() {
         super.onMessageReceived(message)
         val type = message.data["type"].orEmpty()
         val isCall = type == "call" || type == "incoming_call"
+        if (!isCall && isAppInForeground()) return
         val title = message.notification?.title ?: message.data["title"] ?: if (isCall) "Incoming TwoLink" else "TwoShare"
         val body = message.notification?.body ?: message.data["body"] ?: if (isCall) "Your partner is calling." else "You have a new notification."
         showNotification(title, body, isCall)
+    }
+
+    private fun isAppInForeground(): Boolean {
+        val manager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        return manager.runningAppProcesses?.any {
+            it.processName == packageName && it.importance == ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND
+        } == true
     }
 
     private fun showNotification(title: String, body: String, isCall: Boolean) {
