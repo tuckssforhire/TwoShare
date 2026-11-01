@@ -450,9 +450,13 @@ class TwoShareRepository {
         requireAllowedUser()
         val other = loadProfiles().values.firstOrNull { it.id != uid }
             ?: error("The second TwoShare account is not available.")
-        return supabase.from("calls")
+        val call = supabase.from("calls")
             .insert(CallInsert(uid, other.id, isVideo)) { select() }
-            .decodeSingle()
+            .decodeSingle<CallRow>()
+        // The call row is authoritative. Push is a wake-up/alert path, so a
+        // temporary push failure must never cancel a call that was created.
+        runCatching { PushSender.notifyOther("call", callId = call.id) }
+        return call
     }
 
     suspend fun findIncomingCall(): CallRow? {
@@ -518,29 +522,50 @@ class TwoShareRepository {
     suspend fun cancelCall(callId: String) = setCallStatus(callId, "cancelled")
     suspend fun endCall(callId: String) = setCallStatus(callId, "ended")
 
+    suspend fun markCallConnected(callId: String) {
+        requireAllowedUser()
+        val call = getCall(callId) ?: return
+        if (call.connectedAt != null) return
+        supabase.from("calls").update({
+            set("connected_at", Instant.now().toString())
+        }) { filter { eq("id", callId) } }
+    }
+
+    suspend fun updateCallTransport(callId: String, transport: String?) {
+        requireAllowedUser()
+        val normalized = transport?.trim()?.lowercase()?.takeIf { it in setOf("direct", "relay") }
+        supabase.from("calls").update({ set("transport", normalized) }) {
+            filter { eq("id", callId) }
+        }
+    }
+
     private suspend fun setCallStatus(callId: String, status: String) {
         requireAllowedUser()
         supabase.from("calls").update({
             set("status", status)
-            if (status in setOf("rejected", "cancelled", "ended")) {
-                set("ended_at", Instant.now().toString())
-            }
+            set("ended_at", Instant.now().toString())
         }) {
             filter { eq("id", callId) }
         }
     }
 
-    private suspend fun loadProfiles(): Map<String, ProfileRow> = retryNetworkRead {
-        supabase.from("profiles")
-            .select()
-            .decodeList<ProfileRow>()
-            .associateBy { it.id }
+    suspend fun loadProfiles(): Map<String, ProfileRow> = retryNetworkRead {
+        supabase.from("profiles").select().decodeList<ProfileRow>().associateBy { it.id }
     }
 
-    private fun fileExtension(mime: String?, fallback: String): String =
-        MimeTypeMap.getSingleton()
-            .getExtensionFromMimeType(mime)
-            ?.lowercase()
-            ?.takeIf { it.matches(Regex("[a-z0-9]{2,5}")) }
-            ?: fallback
+    suspend fun loadMessageReactions(messageId: String): Map<String, Set<String>> {
+        requireAllowedUser()
+        return retryNetworkRead {
+            supabase.from("message_reactions").select {
+                filter { eq("message_id", messageId) }
+            }.decodeList<MessageReactionRow>()
+                .groupBy { it.emoji }
+                .mapValues { entry -> entry.value.map { it.userId }.toSet() }
+        }
+    }
+
+    private fun fileExtension(mime: String?, fallback: String): String {
+        val fromMime = mime?.let { MimeTypeMap.getSingleton().getExtensionFromMimeType(it) }
+        return fromMime?.lowercase()?.takeIf { it.matches(Regex("[a-z0-9]{1,8}")) } ?: fallback
+    }
 }
