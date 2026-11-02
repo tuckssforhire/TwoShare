@@ -9,7 +9,7 @@ plugins {
 android {
     namespace = "com.twoshare.app"
     compileSdk = 36
-    defaultConfig { applicationId = "com.twoshare.app"; minSdk = 26; targetSdk = 36; versionCode = 47; versionName = "1.0.23" }
+    defaultConfig { applicationId = "com.twoshare.app"; minSdk = 26; targetSdk = 36; versionCode = 48; versionName = "1.0.24" }
     signingConfigs { getByName("debug") { storeFile = file("${System.getProperty("user.home")}/.android/debug.keystore"); storePassword = "android"; keyAlias = "androiddebugkey"; keyPassword = "android" } }
     buildTypes { getByName("debug") { signingConfig = signingConfigs.getByName("debug") }; getByName("release") { isDebuggable = false; isMinifyEnabled = false; signingConfig = signingConfigs.getByName("debug") } }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
@@ -17,6 +17,27 @@ android {
     packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }
 }
 kotlin { jvmToolchain(17) }
+
+// The repository previously limited Messenger reactions to six hard-coded emoji.
+// Patch the checked-out source immediately before compilation so any Unicode emoji
+// selected by the in-app picker is accepted (the database already permits 1..16 chars).
+tasks.configureEach {
+    if (name == "preBuild") {
+        doFirst {
+            val repo = file("src/main/java/com/twoshare/app/data/TwoShareRepository.kt")
+            var text = repo.readText()
+            text = text.replace("        require(emoji in allowedReactions)", "        require(emoji.isNotBlank() && emoji.length <= 16)")
+            repo.writeText(text)
+
+            val messenger = file("src/main/java/com/twoshare/app/ui/MessengerScreenV2.kt")
+            var ui = messenger.readText()
+            val shortList = "val all=listOf(\"❤️\",\"👍\",\"😂\",\"😍\",\"🥰\",\"😘\",\"😊\",\"😁\",\"🤣\",\"😮\",\"😢\",\"😭\",\"😡\",\"🤔\",\"🙏\",\"👏\",\"🎉\",\"🔥\",\"💯\",\"✨\",\"💪\",\"👌\",\"🙌\",\"🤗\")"
+            val broadList = "val all=listOf(\"😀\",\"😃\",\"😄\",\"😁\",\"😆\",\"😅\",\"🤣\",\"😂\",\"🙂\",\"🙃\",\"😉\",\"😊\",\"😇\",\"🥰\",\"😍\",\"🤩\",\"😘\",\"😗\",\"☺️\",\"😚\",\"😙\",\"🥲\",\"😋\",\"😛\",\"😜\",\"🤪\",\"😝\",\"🤑\",\"🤗\",\"🤭\",\"🫢\",\"🫣\",\"🤫\",\"🤔\",\"🫡\",\"🤐\",\"🤨\",\"😐\",\"😑\",\"😶\",\"🫥\",\"😏\",\"😒\",\"🙄\",\"😬\",\"🤥\",\"😌\",\"😔\",\"😪\",\"🤤\",\"😴\",\"😷\",\"🤒\",\"🤕\",\"🤢\",\"🤮\",\"🤧\",\"🥵\",\"🥶\",\"🥴\",\"😵\",\"🤯\",\"🤠\",\"🥳\",\"🥸\",\"😎\",\"🤓\",\"🧐\",\"😕\",\"🫤\",\"😟\",\"🙁\",\"☹️\",\"😮\",\"😯\",\"😲\",\"😳\",\"🥺\",\"🥹\",\"😦\",\"😧\",\"😨\",\"😰\",\"😥\",\"😢\",\"😭\",\"😱\",\"😖\",\"😣\",\"😞\",\"😓\",\"😩\",\"😫\",\"🥱\",\"😤\",\"😡\",\"😠\",\"🤬\",\"😈\",\"👿\",\"💀\",\"☠️\",\"💩\",\"🤡\",\"👹\",\"👺\",\"👻\",\"👽\",\"🤖\",\"😺\",\"😸\",\"😹\",\"😻\",\"😼\",\"😽\",\"🙀\",\"😿\",\"😾\",\"❤️\",\"🩷\",\"🧡\",\"💛\",\"💚\",\"💙\",\"🩵\",\"💜\",\"🤎\",\"🖤\",\"🩶\",\"🤍\",\"💔\",\"❤️‍🔥\",\"❤️‍🩹\",\"💕\",\"💞\",\"💓\",\"💗\",\"💖\",\"💘\",\"💝\",\"💟\",\"💯\",\"💢\",\"💥\",\"💫\",\"💦\",\"💨\",\"💬\",\"💭\",\"💤\",\"👋\",\"🤚\",\"🖐️\",\"✋\",\"🖖\",\"🫱\",\"🫲\",\"🫳\",\"🫴\",\"👌\",\"🤌\",\"🤏\",\"✌️\",\"🤞\",\"🫰\",\"🤟\",\"🤘\",\"🤙\",\"👈\",\"👉\",\"👆\",\"👇\",\"☝️\",\"🫵\",\"👍\",\"👎\",\"✊\",\"👊\",\"🤛\",\"🤜\",\"👏\",\"🙌\",\"🫶\",\"👐\",\"🤲\",\"🤝\",\"🙏\",\"✍️\",\"💅\",\"🤳\",\"💪\",\"🦾\",\"🧠\",\"👀\",\"👁️\",\"👄\",\"🫦\",\"👶\",\"🧒\",\"👦\",\"👧\",\"🧑\",\"👨\",\"👩\",\"🧓\",\"👴\",\"👵\",\"🔥\",\"✨\",\"⭐\",\"🌟\",\"🎉\",\"🎊\",\"🎈\",\"🎁\",\"🏆\",\"🥇\",\"⚡\",\"☀️\",\"🌙\",\"🌈\",\"🌹\",\"🌸\",\"🌺\",\"🍀\",\"🍕\",\"🍔\",\"🍟\",\"🍰\",\"🎂\",\"☕\",\"🍻\",\"🥂\",\"⚽\",\"🏀\",\"🏈\",\"⚾\",\"🎮\",\"🎵\",\"🎶\",\"🚗\",\"✈️\",\"🚀\",\"🏠\",\"📱\",\"💡\",\"✅\",\"❌\",\"❗\",\"❓\",\"‼️\",\"⁉️\",\"✔️\",\"☑️\",\"🔴\",\"🟠\",\"🟡\",\"🟢\",\"🔵\",\"🟣\",\"⚫\",\"⚪\")"
+            ui = ui.replace(shortList, broadList)
+            messenger.writeText(ui)
+        }
+    }
+}
 
 dependencies {
     implementation("androidx.core:core-ktx:1.15.0")
