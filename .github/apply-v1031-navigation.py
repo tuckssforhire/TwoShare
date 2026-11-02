@@ -18,6 +18,19 @@ feed = Path('app/src/main/java/com/twoshare/app/ui/FeedScreen.kt')
 s = feed.read_text()
 s = s.replace('import androidx.compose.material.icons.filled.AddPhotoAlternate\n', 'import androidx.compose.material.icons.filled.Add\nimport androidx.compose.material.icons.filled.AddPhotoAlternate\n')
 s = s.replace('var menuOpen by remember{mutableStateOf(false)};', 'var menuOpen by remember{mutableStateOf(false)};var addMenuOpen by remember{mutableStateOf(false)};')
+
+# Camera return stability: never let MediaStore/bitmap persistence exceptions crash Compose
+# when the external camera activity hands control back to Feed.
+old_camera = 'val camera=rememberLauncherForActivityResult(ActivityResultContracts.TakePicturePreview()){bitmap->if(bitmap!=null){val uri=savePostCameraBitmap(context,bitmap);if(uri!=null){composerError=null;pendingUploadUris=listOf(uri)}else composerError="Unable to save camera photo."}}'
+new_camera = '''val camera=rememberLauncherForActivityResult(ActivityResultContracts.TakePicturePreview()){bitmap->
+  if(bitmap!=null){
+   runCatching{savePostCameraBitmap(context,bitmap)}.onSuccess{uri->if(uri!=null){composerError=null;pendingUploadUris=listOf(uri)}else composerError="Unable to save camera photo."}.onFailure{composerError=friendlyError(it,"Unable to save camera photo.")}
+  }
+ }'''
+if old_camera not in s:
+    raise SystemExit('Camera callback anchor not found')
+s = s.replace(old_camera, new_camera, 1)
+
 old_actions = 'actions={FilledTonalIconButton(onClick=onOpenCalendar){Icon(Icons.Default.CalendarMonth,"Calendar")};Spacer(Modifier.width(4.dp));BadgedBox(badge={if(unreadCount>0)Badge{Text(if(unreadCount>99)"99+" else unreadCount.toString())}}){FilledTonalIconButton(onClick=onOpenMessenger){Icon(Icons.Default.ChatBubbleOutline,"Chat")}};Box{IconButton(onClick={menuOpen=true}){Icon(Icons.Default.MoreVert,"More")};DropdownMenu(menuOpen,{menuOpen=false}){DropdownMenuItem(text={Text("Calendar & schedule")},onClick={menuOpen=false;onOpenCalendar()});DropdownMenuItem(text={Text("Account settings")},onClick={menuOpen=false;showAccountSettings=true});DropdownMenuItem(text={Text("Sign out")},onClick={menuOpen=false;scope.launch{runCatching{repository.signOut()};onSignedOut()}})}};Spacer(Modifier.width(4.dp))}'
 new_actions = 'actions={Box{IconButton(onClick={menuOpen=true}){Icon(Icons.Default.MoreVert,"More")};DropdownMenu(menuOpen,{menuOpen=false}){DropdownMenuItem(text={Text("Account settings")},onClick={menuOpen=false;showAccountSettings=true});DropdownMenuItem(text={Text("Sign out")},onClick={menuOpen=false;scope.launch{runCatching{repository.signOut()};onSignedOut()}})}};Spacer(Modifier.width(4.dp))}'
 if old_actions not in s:
