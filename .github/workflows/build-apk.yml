@@ -13,7 +13,7 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Add Messenger last-seen profile badge
+      - name: Add Messenger last-seen profile badge and reaction picker
         shell: bash
         run: |
           python3 - <<'PY'
@@ -30,12 +30,20 @@ jobs:
           if old not in s: raise SystemExit('MessageRow signature not found')
           s=s.replace(old,new,1)
           marker='@OptIn(ExperimentalFoundationApi::class)\n@Composable private fun MessageRow'
-          helper='@Composable private fun SeenBadge(photo:String?){Surface(Modifier.size(18.dp),shape=CircleShape,color=MaterialTheme.colorScheme.secondaryContainer,border=BorderStroke(1.dp,MaterialTheme.colorScheme.surface)){if(photo!=null)AsyncImage(photo,"Seen by partner",Modifier.fillMaxSize(),contentScale=ContentScale.Crop)else Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center){Text("✓",fontSize=10.sp)}}}\n@OptIn(ExperimentalFoundationApi::class)\n@Composable private fun MessageRow'
+          helper='@Composable private fun SeenBadge(photo:String?){Surface(Modifier.size(16.dp),shape=CircleShape,color=MaterialTheme.colorScheme.secondaryContainer,border=BorderStroke(1.dp,MaterialTheme.colorScheme.outlineVariant),shadowElevation=1.dp){if(photo!=null)AsyncImage(photo,"Seen by partner",Modifier.fillMaxSize(),contentScale=ContentScale.Crop)else Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center){Text("✓",fontSize=9.sp,color=MaterialTheme.colorScheme.primary)}}}\n@OptIn(ExperimentalFoundationApi::class)\n@Composable private fun MessageRow'
           if marker not in s: raise SystemExit('MessageRow marker not found')
           s=s.replace(marker,helper,1)
           old='if(showTime||message.localState!="sent")Text((if(showTime)absoluteTime(message.createdAt)else "")+if(mine){if(showTime)" · $receipt" else receipt}else "",style=MaterialTheme.typography.labelSmall);if(message.localState=="failed")'
-          new='if(showTime||message.localState!="sent"||showSeenBadge)Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(4.dp)){val receiptText=(if(showTime)absoluteTime(message.createdAt)else "")+if(mine){if(showTime)" · $receipt" else if(showSeenBadge)"Seen" else receipt}else "";if(receiptText.isNotBlank())Text(receiptText,style=MaterialTheme.typography.labelSmall);if(mine&&showSeenBadge)SeenBadge(seenPhoto)};if(message.localState=="failed")'
+          new='if(showTime||message.localState!="sent"||showSeenBadge)Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(3.dp)){val receiptText=(if(showTime)absoluteTime(message.createdAt)else "")+if(mine){if(showTime)" · $receipt" else if(showSeenBadge)"Seen" else receipt}else "";if(receiptText.isNotBlank())Text(receiptText,style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant);if(mine&&showSeenBadge)SeenBadge(seenPhoto)};if(message.localState=="failed")'
           if old not in s: raise SystemExit('Receipt line not found')
+          s=s.replace(old,new,1)
+          old='TextButton(onClick={actions=false;emojiPicker=true}){Text("+")}'
+          new='IconButton(onClick={actions=false;emojiPicker=true},modifier=Modifier.size(36.dp)){Icon(Icons.Default.AddReaction,"More reactions",Modifier.size(22.dp))}'
+          if old not in s: raise SystemExit('More reaction button not found')
+          s=s.replace(old,new,1)
+          old='@Composable private fun EmojiPickerDialog(onDismiss:()->Unit,onEmoji:(String)->Unit){var emoji by remember{mutableStateOf("")};val focus=remember{FocusRequester()};AlertDialog(onDismissRequest=onDismiss,title={Text("Choose any emoji")},text={OutlinedTextField(emoji,{emoji=it.take(16)},Modifier.fillMaxWidth().focusRequester(focus),singleLine=true,keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Text),placeholder={Text("😀")});LaunchedEffect(Unit){delay(150);focus.requestFocus()}},confirmButton={TextButton(onClick={onEmoji(emoji)},enabled=emoji.isNotBlank()){Text("React")}},dismissButton={TextButton(onClick=onDismiss){Text("Cancel")}})}'
+          new='@Composable private fun EmojiPickerDialog(onDismiss:()->Unit,onEmoji:(String)->Unit){val all=listOf("❤️","👍","😂","😍","🥰","😘","😊","😁","🤣","😮","😢","😭","😡","🤔","🙏","👏","🎉","🔥","💯","✨","💪","👌","🙌","🤗");AlertDialog(onDismissRequest=onDismiss,title={Text("Choose a reaction")},text={Column(verticalArrangement=Arrangement.spacedBy(8.dp)){all.chunked(6).forEach{row->Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceEvenly){row.forEach{e->Surface(shape=CircleShape,color=MaterialTheme.colorScheme.surfaceContainerHigh,modifier=Modifier.size(42.dp).clickable{onEmoji(e)}){Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center){Text(e,fontSize=24.sp)}}}}}}},confirmButton={},dismissButton={TextButton(onClick=onDismiss){Text("Cancel")}})}'
+          if old not in s: raise SystemExit('Emoji picker dialog not found')
           s=s.replace(old,new,1)
           p.write_text(s)
           PY
@@ -63,7 +71,6 @@ jobs:
           new='LaunchedEffect(timeline.size){if(!initialScrollDone&&timeline.isNotEmpty()){delay(100);val count=listState.layoutInfo.totalItemsCount;if(count>0){runCatching{listState.scrollToItem(timeline.lastIndex.coerceAtMost(count-1))};initialScrollDone=true}}else if(initialScrollDone&&timeline.size>previousTimelineSize&&listState.firstVisibleItemIndex>=(previousTimelineSize-8).coerceAtLeast(0)){delay(80);runCatching{listState.animateScrollToItem(timeline.lastIndex)}};previousTimelineSize=timeline.size}'
           if old not in s: raise SystemExit('Timeline scroll effect not found')
           s=s.replace(old,new,1)
-          # Animate each LazyColumn row so a newly received message expands into the bottom and pushes existing messages upward instead of snapping.
           old='itemsIndexed(timeline,key={_,entry->when(val item=entry.second){is UiChatMessage->"m-${item.id}";is CallRow->"c-${item.id}";else->entry.first.toString()}}){_,entry->val item=entry.second;'
           new='itemsIndexed(timeline,key={_,entry->when(val item=entry.second){is UiChatMessage->"m-${item.id}";is CallRow->"c-${item.id}";else->entry.first.toString()}}){_,entry->Box(Modifier.animateItem(fadeInSpec=androidx.compose.animation.core.tween(220),placementSpec=androidx.compose.animation.core.tween(320),fadeOutSpec=androidx.compose.animation.core.tween(160))){val item=entry.second;'
           if old not in s: raise SystemExit('Timeline items block not found')
@@ -144,6 +151,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: TwoShare-v1.0.22-release-apk
+          name: TwoShare-v1.0.23-release-apk
           path: app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
