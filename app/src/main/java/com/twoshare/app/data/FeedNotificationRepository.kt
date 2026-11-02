@@ -1,5 +1,6 @@
 package com.twoshare.app.data
 
+import com.twoshare.app.model.ProfileRow
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.query.Order
 import kotlinx.serialization.SerialName
