@@ -9,7 +9,7 @@ plugins {
 android {
     namespace = "com.twoshare.app"
     compileSdk = 36
-    defaultConfig { applicationId = "com.twoshare.app"; minSdk = 26; targetSdk = 36; versionCode = 48; versionName = "1.0.24" }
+    defaultConfig { applicationId = "com.twoshare.app"; minSdk = 26; targetSdk = 36; versionCode = 49; versionName = "1.0.25" }
     signingConfigs { getByName("debug") { storeFile = file("${System.getProperty("user.home")}/.android/debug.keystore"); storePassword = "android"; keyAlias = "androiddebugkey"; keyPassword = "android" } }
     buildTypes { getByName("debug") { signingConfig = signingConfigs.getByName("debug") }; getByName("release") { isDebuggable = false; isMinifyEnabled = false; signingConfig = signingConfigs.getByName("debug") } }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
@@ -18,15 +18,14 @@ android {
 }
 kotlin { jvmToolchain(17) }
 
-// The repository previously limited Messenger reactions to six hard-coded emoji.
-// Patch the checked-out source immediately before compilation so any Unicode emoji
-// selected by the in-app picker is accepted (the database already permits 1..16 chars).
+// Messenger reaction compatibility. The database accepts Unicode reaction strings up to 16 characters.
+// CI currently injects the expanded picker, so normalize the generated source before compilation.
 tasks.configureEach {
     if (name == "preBuild") {
         doFirst {
             val repo = file("src/main/java/com/twoshare/app/data/TwoShareRepository.kt")
             var text = repo.readText()
-            text = text.replace("        require(emoji in allowedReactions)", "        require(emoji.isNotBlank() && emoji.length <= 16)")
+            text = text.replace("        require(emoji in allowedReactions)", "        require(emoji.isNotBlank() && emoji.codePointCount(0, emoji.length) <= 16)")
             repo.writeText(text)
 
             val messenger = file("src/main/java/com/twoshare/app/ui/MessengerScreenV2.kt")
@@ -34,6 +33,9 @@ tasks.configureEach {
             val shortList = "val all=listOf(\"❤️\",\"👍\",\"😂\",\"😍\",\"🥰\",\"😘\",\"😊\",\"😁\",\"🤣\",\"😮\",\"😢\",\"😭\",\"😡\",\"🤔\",\"🙏\",\"👏\",\"🎉\",\"🔥\",\"💯\",\"✨\",\"💪\",\"👌\",\"🙌\",\"🤗\")"
             val broadList = "val all=listOf(\"😀\",\"😃\",\"😄\",\"😁\",\"😆\",\"😅\",\"🤣\",\"😂\",\"🙂\",\"🙃\",\"😉\",\"😊\",\"😇\",\"🥰\",\"😍\",\"🤩\",\"😘\",\"😗\",\"☺️\",\"😚\",\"😙\",\"🥲\",\"😋\",\"😛\",\"😜\",\"🤪\",\"😝\",\"🤑\",\"🤗\",\"🤭\",\"🫢\",\"🫣\",\"🤫\",\"🤔\",\"🫡\",\"🤐\",\"🤨\",\"😐\",\"😑\",\"😶\",\"🫥\",\"😏\",\"😒\",\"🙄\",\"😬\",\"🤥\",\"😌\",\"😔\",\"😪\",\"🤤\",\"😴\",\"😷\",\"🤒\",\"🤕\",\"🤢\",\"🤮\",\"🤧\",\"🥵\",\"🥶\",\"🥴\",\"😵\",\"🤯\",\"🤠\",\"🥳\",\"🥸\",\"😎\",\"🤓\",\"🧐\",\"😕\",\"🫤\",\"😟\",\"🙁\",\"☹️\",\"😮\",\"😯\",\"😲\",\"😳\",\"🥺\",\"🥹\",\"😦\",\"😧\",\"😨\",\"😰\",\"😥\",\"😢\",\"😭\",\"😱\",\"😖\",\"😣\",\"😞\",\"😓\",\"😩\",\"😫\",\"🥱\",\"😤\",\"😡\",\"😠\",\"🤬\",\"😈\",\"👿\",\"💀\",\"☠️\",\"💩\",\"🤡\",\"👹\",\"👺\",\"👻\",\"👽\",\"🤖\",\"😺\",\"😸\",\"😹\",\"😻\",\"😼\",\"😽\",\"🙀\",\"😿\",\"😾\",\"❤️\",\"🩷\",\"🧡\",\"💛\",\"💚\",\"💙\",\"🩵\",\"💜\",\"🤎\",\"🖤\",\"🩶\",\"🤍\",\"💔\",\"❤️‍🔥\",\"❤️‍🩹\",\"💕\",\"💞\",\"💓\",\"💗\",\"💖\",\"💘\",\"💝\",\"💟\",\"💯\",\"💢\",\"💥\",\"💫\",\"💦\",\"💨\",\"💬\",\"💭\",\"💤\",\"👋\",\"🤚\",\"🖐️\",\"✋\",\"🖖\",\"🫱\",\"🫲\",\"🫳\",\"🫴\",\"👌\",\"🤌\",\"🤏\",\"✌️\",\"🤞\",\"🫰\",\"🤟\",\"🤘\",\"🤙\",\"👈\",\"👉\",\"👆\",\"👇\",\"☝️\",\"🫵\",\"👍\",\"👎\",\"✊\",\"👊\",\"🤛\",\"🤜\",\"👏\",\"🙌\",\"🫶\",\"👐\",\"🤲\",\"🤝\",\"🙏\",\"✍️\",\"💅\",\"🤳\",\"💪\",\"🦾\",\"🧠\",\"👀\",\"👁️\",\"👄\",\"🫦\",\"👶\",\"🧒\",\"👦\",\"👧\",\"🧑\",\"👨\",\"👩\",\"🧓\",\"👴\",\"👵\",\"🔥\",\"✨\",\"⭐\",\"🌟\",\"🎉\",\"🎊\",\"🎈\",\"🎁\",\"🏆\",\"🥇\",\"⚡\",\"☀️\",\"🌙\",\"🌈\",\"🌹\",\"🌸\",\"🌺\",\"🍀\",\"🍕\",\"🍔\",\"🍟\",\"🍰\",\"🎂\",\"☕\",\"🍻\",\"🥂\",\"⚽\",\"🏀\",\"🏈\",\"⚾\",\"🎮\",\"🎵\",\"🎶\",\"🚗\",\"✈️\",\"🚀\",\"🏠\",\"📱\",\"💡\",\"✅\",\"❌\",\"❗\",\"❓\",\"‼️\",\"⁉️\",\"✔️\",\"☑️\",\"🔴\",\"🟠\",\"🟡\",\"🟢\",\"🔵\",\"🟣\",\"⚫\",\"⚪\")"
             ui = ui.replace(shortList, broadList)
+            val fixedGrid = "text={Column(verticalArrangement=Arrangement.spacedBy(8.dp)){all.chunked(6).forEach{row->Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceEvenly){row.forEach{e->Surface(shape=CircleShape,color=MaterialTheme.colorScheme.surfaceContainerHigh,modifier=Modifier.size(42.dp).clickable{onEmoji(e)}){Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center){Text(e,fontSize=24.sp)}}}}}}}"
+            val scrollGrid = "text={LazyColumn(Modifier.fillMaxWidth().heightIn(max=520.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){items(all.chunked(6)){row->Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceEvenly){row.forEach{e->Surface(shape=CircleShape,color=MaterialTheme.colorScheme.surfaceContainerHigh,modifier=Modifier.size(42.dp).clickable{onEmoji(e)}){Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center){Text(e,fontSize=24.sp)}}}}}}}"
+            ui = ui.replace(fixedGrid, scrollGrid)
             messenger.writeText(ui)
         }
     }
