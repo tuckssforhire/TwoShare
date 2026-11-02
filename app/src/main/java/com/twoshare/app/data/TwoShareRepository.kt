@@ -20,7 +20,6 @@ class TwoShareRepository {
     private val supabase = SupabaseProvider.client
     private val signedUrlCache = mutableMapOf<String, String>()
     private val allowedEmails = setOf("eddierodwards@gmail.com", "misamitchlailarene@gmail.com")
-    private val allowedReactions = setOf("👍", "❤️", "😂", "😮", "😢", "🔥")
 
     private data class PreparedPhoto(val bytes: ByteArray, val extension: String)
 
@@ -28,33 +27,14 @@ class TwoShareRepository {
     fun isSignedIn(): Boolean = currentUserId() != null
 
     fun isTransientNetworkError(throwable: Throwable): Boolean {
-        val text = generateSequence(throwable) { it.cause }.joinToString(" ") {
-            "${it::class.simpleName.orEmpty()} ${it.localizedMessage.orEmpty()}"
-        }.lowercase()
-        return listOf(
-            "timeout",
-            "timed out",
-            "failed to connect",
-            "connection reset",
-            "connection closed",
-            "connection abort",
-            "network is unreachable",
-            "unable to resolve host",
-            "broken pipe",
-            "socketexception",
-            "connectexception",
-            "request timeout has expired"
-        ).any(text::contains)
+        val text = generateSequence(throwable) { it.cause }.joinToString(" ") { "${it::class.simpleName.orEmpty()} ${it.localizedMessage.orEmpty()}" }.lowercase()
+        return listOf("timeout","timed out","failed to connect","connection reset","connection closed","connection abort","network is unreachable","unable to resolve host","broken pipe","socketexception","connectexception","request timeout has expired").any(text::contains)
     }
 
     internal suspend fun <T> retryNetworkRead(maxAttempts: Int = 5, block: suspend () -> T): T {
         var lastFailure: Throwable? = null
         repeat(maxAttempts) { attempt ->
-            try {
-                return block()
-            } catch (cancel: CancellationException) {
-                throw cancel
-            } catch (t: Throwable) {
+            try { return block() } catch (cancel: CancellationException) { throw cancel } catch (t: Throwable) {
                 lastFailure = t
                 if (!isTransientNetworkError(t) || attempt == maxAttempts - 1) throw t
                 delay(750L * (attempt + 1))
@@ -65,507 +45,53 @@ class TwoShareRepository {
 
     private suspend fun recoverCurrentUserId(): String? {
         currentUserId()?.let { return it }
-
-        repeat(4) {
-            delay(250)
-            currentUserId()?.let { return it }
-        }
-
-        if (supabase.auth.currentSessionOrNull() != null) {
-            runCatching { supabase.auth.refreshCurrentSession() }
-            currentUserId()?.let { return it }
-        }
-
+        repeat(4) { delay(250); currentUserId()?.let { return it } }
+        if (supabase.auth.currentSessionOrNull() != null) { runCatching { supabase.auth.refreshCurrentSession() }; currentUserId()?.let { return it } }
         return null
     }
 
-    suspend fun sendSignInEmail(email: String) {
-        val normalized = email.trim().lowercase()
-        require(normalized in allowedEmails) { "This email is not authorized for TwoShare." }
-        supabase.auth.signInWith(OTP) {
-            this.email = normalized
-            createUser = false
-        }
-    }
+    suspend fun sendSignInEmail(email: String) { val normalized=email.trim().lowercase();require(normalized in allowedEmails){"This email is not authorized for TwoShare."};supabase.auth.signInWith(OTP){this.email=normalized;createUser=false} }
+    suspend fun verifyEmailCode(email:String,code:String){val normalized=email.trim().lowercase();require(normalized in allowedEmails);require(code.trim().isNotEmpty());supabase.auth.verifyEmailOtp(type=OtpType.Email.EMAIL,email=normalized,token=code.trim());requireAllowedUser()}
+    suspend fun signOut(){supabase.auth.signOut()}
+    suspend fun requireAllowedUser():ProfileRow{val uid=recoverCurrentUserId()?:error("Your session has expired. Please sign in again.");return retryNetworkRead{supabase.from("profiles").select{filter{eq("id",uid)}}.decodeList<ProfileRow>().firstOrNull()}?:error("This account is not one of the two allowed users.")}
 
-    suspend fun verifyEmailCode(email: String, code: String) {
-        val normalized = email.trim().lowercase()
-        require(normalized in allowedEmails)
-        require(code.trim().isNotEmpty())
-        supabase.auth.verifyEmailOtp(
-            type = OtpType.Email.EMAIL,
-            email = normalized,
-            token = code.trim()
-        )
+    suspend fun loadFeed():List<FeedPost>{requireAllowedUser();val posts=retryNetworkRead{supabase.from("posts").select{order("created_at",Order.DESCENDING)}.decodeList<PostRow>()};if(posts.isEmpty())return emptyList();val profiles=loadProfiles();val likes=retryNetworkRead{supabase.from("likes").select().decodeList<LikeRow>().groupBy{it.postId}};val bucket=supabase.storage.from("twoshare");return posts.map{post->val paths=post.imagePaths.filter{it.isNotBlank()}.ifEmpty{listOf(post.imagePath)}.distinct();val urls=paths.map{path->signedUrlCache[path]?:retryNetworkRead{bucket.createSignedUrl(path,24.hours)}.also{signedUrlCache[path]=it}};FeedPost(post.id,post.userId,profiles[post.userId]?.displayName?:"User",paths,urls,post.caption,post.createdAt,likes[post.id].orEmpty().map{it.userId}.toSet())}}
+    suspend fun uploadPhoto(context:Context,imageUri:Uri,caption:String?=null)=uploadPhotos(context,listOf(imageUri),caption)
+    suspend fun uploadPhotos(context:Context,imageUris:List<Uri>,caption:String?=null){val uid=recoverCurrentUserId()?:error("Your session has expired. Please sign in again.");requireAllowedUser();require(imageUris.isNotEmpty());val cleanedCaption=normalizeCaption(caption);val prepared=preparePhotos(context,imageUris);val bucket=supabase.storage.from("twoshare");val paths=mutableListOf<String>();try{prepared.forEach{photo->val path="$uid/posts/${UUID.randomUUID()}.${photo.extension}";bucket.upload(path,photo.bytes){upsert=false};paths+=path};supabase.from("posts").insert(PostInsert(uid,paths.first(),paths,cleanedCaption))}catch(t:Throwable){if(paths.isNotEmpty())runCatching{bucket.delete(*paths.toTypedArray())};throw t}}
+    suspend fun editPostPhotos(context:Context,post:FeedPost,removedPaths:Set<String>,addedUris:List<Uri>,caption:String?=post.caption){val uid=recoverCurrentUserId()?:error("Your session has expired. Please sign in again.");requireAllowedUser();require(post.userId==uid){"You can only edit your own post."};val cleanedCaption=normalizeCaption(caption);val existingPaths=post.imagePaths.filter{it.isNotBlank()}.distinct();val toRemove=existingPaths.filter{it in removedPaths};val retained=existingPaths.filterNot{it in removedPaths};val prepared=preparePhotos(context,addedUris);require(retained.isNotEmpty()||prepared.isNotEmpty()){"A post must contain at least one photo."};val bucket=supabase.storage.from("twoshare");val uploadedPaths=mutableListOf<String>();try{prepared.forEach{photo->val path="$uid/posts/${UUID.randomUUID()}.${photo.extension}";bucket.upload(path,photo.bytes){upsert=false};uploadedPaths+=path};val newPaths=retained+uploadedPaths;val updated=supabase.from("posts").update({set("image_path",newPaths.first());set("image_paths",newPaths);set("caption",cleanedCaption)}){select();filter{eq("id",post.id);eq("user_id",uid)}}.decodeList<PostRow>();require(updated.size==1){"Post could not be updated."};toRemove.forEach(signedUrlCache::remove);if(toRemove.isNotEmpty())runCatching{bucket.delete(*toRemove.toTypedArray())}}catch(t:Throwable){if(uploadedPaths.isNotEmpty())runCatching{bucket.delete(*uploadedPaths.toTypedArray())};throw t}}
+    suspend fun deletePost(post:FeedPost){val uid=recoverCurrentUserId()?:error("Your session has expired. Please sign in again.");requireAllowedUser();require(post.userId==uid){"You can only delete your own post."};val paths=post.imagePaths.filter{it.isNotBlank()}.distinct();supabase.from("posts").delete{filter{eq("id",post.id);eq("user_id",uid)}};paths.forEach(signedUrlCache::remove);if(paths.isNotEmpty())runCatching{supabase.storage.from("twoshare").delete(*paths.toTypedArray())}}
+    private fun normalizeCaption(caption:String?):String?{val cleaned=caption?.trim()?.takeIf{it.isNotEmpty()};require(cleaned==null||cleaned.length<=2000){"Caption must be 2,000 characters or fewer."};return cleaned}
+    private fun preparePhotos(context:Context,imageUris:List<Uri>):List<PreparedPhoto>=imageUris.mapIndexed{index,uri->val bytes=context.contentResolver.openInputStream(uri)?.use{it.readBytes()}?:error("Unable to read selected image ${index+1}.");require(bytes.size<=15*1024*1024){"Photo ${index+1} must be 15 MB or smaller."};PreparedPhoto(bytes,fileExtension(context.contentResolver.getType(uri),"jpg"))}
+    suspend fun toggleLike(post:FeedPost){val uid=recoverCurrentUserId()?:error("Your session has expired. Please sign in again.");requireAllowedUser();if(uid in post.likedBy)supabase.from("likes").delete{filter{eq("post_id",post.id);eq("user_id",uid)}}else supabase.from("likes").insert(LikeInsert(post.id,uid))}
+    suspend fun loadComments(postId:String):List<UiComment>{requireAllowedUser();val rows=retryNetworkRead{supabase.from("comments").select{filter{eq("post_id",postId)};order("created_at",Order.ASCENDING)}.decodeList<CommentRow>()};val profiles=loadProfiles();return rows.map{UiComment(it.id,it.userId,profiles[it.userId]?.displayName?:"User",it.text,it.createdAt)}}
+    suspend fun addComment(postId:String,text:String){val uid=recoverCurrentUserId()?:error("Your session has expired. Please sign in again.");requireAllowedUser();val cleaned=text.trim();require(cleaned.isNotEmpty());require(cleaned.length<=1000);supabase.from("comments").insert(CommentInsert(postId,uid,cleaned))}
+
+    suspend fun loadMessages():List<UiChatMessage>{requireAllowedUser();val rows=retryNetworkRead{supabase.from("messages").select{order("created_at",Order.ASCENDING)}.decodeList<MessageRow>()};val profiles=loadProfiles();val reactions=retryNetworkRead{supabase.from("message_reactions").select().decodeList<MessageReactionRow>().groupBy{it.messageId}};val bucket=supabase.storage.from("twoshare");return rows.map{row->val mediaUrl=row.mediaPath?.let{path->signedUrlCache[path]?:retryNetworkRead{bucket.createSignedUrl(path,24.hours)}.also{signedUrlCache[path]=it}};val grouped=reactions[row.id].orEmpty().groupBy{it.emoji}.mapValues{entry->entry.value.map{it.userId}.toSet()};UiChatMessage(row.id,row.senderId,profiles[row.senderId]?.displayName?:"User",row.body,row.mediaType,mediaUrl,row.createdAt,row.readAt,grouped)}}
+    suspend fun unreadMessageCount():Int{val uid=recoverCurrentUserId()?:return 0;requireAllowedUser();return retryNetworkRead{supabase.from("messages").select{filter{neq("sender_id",uid);exact("read_at",null)}}.decodeList<MessageRow>().size}}
+    suspend fun markIncomingMessagesRead(){val uid=recoverCurrentUserId()?:return;requireAllowedUser();retryNetworkRead{supabase.from("messages").update({set("read_at",Instant.now().toString())}){filter{neq("sender_id",uid);exact("read_at",null)}}}}
+    suspend fun sendMessage(context:Context,text:String,attachmentUri:Uri?){val uid=recoverCurrentUserId()?:error("Your session has expired. Please sign in again.");requireAllowedUser();val cleaned=text.trim().takeIf{it.isNotEmpty()};require(cleaned==null||cleaned.length<=2000);require(cleaned!=null||attachmentUri!=null);var mediaPath:String?=null;var mediaType:String?=null;var mediaMime:String?=null;if(attachmentUri!=null){val mime=context.contentResolver.getType(attachmentUri)?.lowercase()?:error("Unable to determine the attachment type.");val type=when{mime.startsWith("image/")->"image";mime.startsWith("video/")->"video";else->error("Only photos and videos can be sent.")};val bytes=context.contentResolver.openInputStream(attachmentUri)?.use{it.readBytes()}?:error("Unable to read the selected attachment.");require(bytes.size<=25*1024*1024);val path="$uid/chat/${UUID.randomUUID()}.${fileExtension(mime,if(type=="video")"mp4" else "jpg")}";supabase.storage.from("twoshare").upload(path,bytes){upsert=false};mediaPath=path;mediaType=type;mediaMime=mime};supabase.from("messages").insert(MessageInsert(uid,cleaned,mediaPath,mediaType,mediaMime))}
+
+    suspend fun toggleMessageReaction(message:UiChatMessage,emoji:String){
+        val uid=recoverCurrentUserId()?:error("Your session has expired. Please sign in again.")
         requireAllowedUser()
-    }
-
-    suspend fun signOut() {
-        supabase.auth.signOut()
-    }
-
-    suspend fun requireAllowedUser(): ProfileRow {
-        val uid = recoverCurrentUserId() ?: error("Your session has expired. Please sign in again.")
-        return retryNetworkRead {
-            supabase.from("profiles")
-                .select { filter { eq("id", uid) } }
-                .decodeList<ProfileRow>()
-                .firstOrNull()
-        } ?: error("This account is not one of the two allowed users.")
-    }
-
-    suspend fun loadFeed(): List<FeedPost> {
-        requireAllowedUser()
-        val posts = retryNetworkRead {
-            supabase.from("posts")
-                .select { order("created_at", Order.DESCENDING) }
-                .decodeList<PostRow>()
-        }
-        if (posts.isEmpty()) return emptyList()
-
-        val profiles = loadProfiles()
-        val likes = retryNetworkRead {
-            supabase.from("likes")
-                .select()
-                .decodeList<LikeRow>()
-                .groupBy { it.postId }
-        }
-        val bucket = supabase.storage.from("twoshare")
-
-        return posts.map { post ->
-            val paths = post.imagePaths
-                .filter { it.isNotBlank() }
-                .ifEmpty { listOf(post.imagePath) }
-                .distinct()
-            val urls = paths.map { path ->
-                signedUrlCache[path] ?: retryNetworkRead {
-                    bucket.createSignedUrl(path, 24.hours)
-                }.also { signedUrlCache[path] = it }
-            }
-            FeedPost(
-                id = post.id,
-                userId = post.userId,
-                userName = profiles[post.userId]?.displayName ?: "User",
-                imagePaths = paths,
-                imageUrls = urls,
-                caption = post.caption,
-                createdAt = post.createdAt,
-                likedBy = likes[post.id].orEmpty().map { it.userId }.toSet()
-            )
+        val reaction=emoji.trim()
+        require(reaction.isNotEmpty() && reaction.codePointCount(0,reaction.length)<=16){"Invalid reaction."}
+        if(message.reactions[reaction]?.contains(uid)==true){
+            supabase.from("message_reactions").delete{filter{eq("message_id",message.id);eq("user_id",uid);eq("emoji",reaction)}}
+        }else{
+            supabase.from("message_reactions").insert(MessageReactionInsert(message.id,uid,reaction))
         }
     }
 
-    suspend fun uploadPhoto(
-        context: Context,
-        imageUri: Uri,
-        caption: String? = null
-    ) = uploadPhotos(context, listOf(imageUri), caption)
-
-    suspend fun uploadPhotos(
-        context: Context,
-        imageUris: List<Uri>,
-        caption: String? = null
-    ) {
-        val uid = recoverCurrentUserId() ?: error("Your session has expired. Please sign in again.")
-        requireAllowedUser()
-        require(imageUris.isNotEmpty())
-        val cleanedCaption = normalizeCaption(caption)
-        val prepared = preparePhotos(context, imageUris)
-        val bucket = supabase.storage.from("twoshare")
-        val paths = mutableListOf<String>()
-
-        try {
-            prepared.forEach { photo ->
-                val path = "$uid/posts/${UUID.randomUUID()}.${photo.extension}"
-                bucket.upload(path, photo.bytes) { upsert = false }
-                paths += path
-            }
-            supabase.from("posts").insert(
-                PostInsert(
-                    userId = uid,
-                    imagePath = paths.first(),
-                    imagePaths = paths,
-                    caption = cleanedCaption
-                )
-            )
-        } catch (t: Throwable) {
-            if (paths.isNotEmpty()) runCatching { bucket.delete(*paths.toTypedArray()) }
-            throw t
-        }
-    }
-
-    suspend fun editPostPhotos(
-        context: Context,
-        post: FeedPost,
-        removedPaths: Set<String>,
-        addedUris: List<Uri>,
-        caption: String? = post.caption
-    ) {
-        val uid = recoverCurrentUserId() ?: error("Your session has expired. Please sign in again.")
-        requireAllowedUser()
-        require(post.userId == uid) { "You can only edit your own post." }
-
-        val cleanedCaption = normalizeCaption(caption)
-        val existingPaths = post.imagePaths.filter { it.isNotBlank() }.distinct()
-        val toRemove = existingPaths.filter { it in removedPaths }
-        val retained = existingPaths.filterNot { it in removedPaths }
-        val prepared = preparePhotos(context, addedUris)
-        require(retained.isNotEmpty() || prepared.isNotEmpty()) {
-            "A post must contain at least one photo."
-        }
-
-        val bucket = supabase.storage.from("twoshare")
-        val uploadedPaths = mutableListOf<String>()
-
-        try {
-            prepared.forEach { photo ->
-                val path = "$uid/posts/${UUID.randomUUID()}.${photo.extension}"
-                bucket.upload(path, photo.bytes) { upsert = false }
-                uploadedPaths += path
-            }
-
-            val newPaths = retained + uploadedPaths
-            val updated = supabase.from("posts").update({
-                set("image_path", newPaths.first())
-                set("image_paths", newPaths)
-                set("caption", cleanedCaption)
-            }) {
-                select()
-                filter {
-                    eq("id", post.id)
-                    eq("user_id", uid)
-                }
-            }.decodeList<PostRow>()
-
-            require(updated.size == 1) { "Post could not be updated." }
-
-            toRemove.forEach(signedUrlCache::remove)
-            if (toRemove.isNotEmpty()) {
-                runCatching { bucket.delete(*toRemove.toTypedArray()) }
-            }
-        } catch (t: Throwable) {
-            if (uploadedPaths.isNotEmpty()) {
-                runCatching { bucket.delete(*uploadedPaths.toTypedArray()) }
-            }
-            throw t
-        }
-    }
-
-    suspend fun deletePost(post: FeedPost) {
-        val uid = recoverCurrentUserId() ?: error("Your session has expired. Please sign in again.")
-        requireAllowedUser()
-        require(post.userId == uid) { "You can only delete your own post." }
-
-        val paths = post.imagePaths.filter { it.isNotBlank() }.distinct()
-        supabase.from("posts").delete {
-            filter {
-                eq("id", post.id)
-                eq("user_id", uid)
-            }
-        }
-        paths.forEach(signedUrlCache::remove)
-        if (paths.isNotEmpty()) {
-            runCatching { supabase.storage.from("twoshare").delete(*paths.toTypedArray()) }
-        }
-    }
-
-    private fun normalizeCaption(caption: String?): String? {
-        val cleaned = caption?.trim()?.takeIf { it.isNotEmpty() }
-        require(cleaned == null || cleaned.length <= 2000) {
-            "Caption must be 2,000 characters or fewer."
-        }
-        return cleaned
-    }
-
-    private fun preparePhotos(context: Context, imageUris: List<Uri>): List<PreparedPhoto> =
-        imageUris.mapIndexed { index, uri ->
-            val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                ?: error("Unable to read selected image ${index + 1}.")
-            require(bytes.size <= 15 * 1024 * 1024) {
-                "Photo ${index + 1} must be 15 MB or smaller."
-            }
-            PreparedPhoto(bytes, fileExtension(context.contentResolver.getType(uri), "jpg"))
-        }
-
-    suspend fun toggleLike(post: FeedPost) {
-        val uid = recoverCurrentUserId() ?: error("Your session has expired. Please sign in again.")
-        requireAllowedUser()
-        if (uid in post.likedBy) {
-            supabase.from("likes").delete {
-                filter {
-                    eq("post_id", post.id)
-                    eq("user_id", uid)
-                }
-            }
-        } else {
-            supabase.from("likes").insert(LikeInsert(post.id, uid))
-        }
-    }
-
-    suspend fun loadComments(postId: String): List<UiComment> {
-        requireAllowedUser()
-        val rows = retryNetworkRead {
-            supabase.from("comments").select {
-                filter { eq("post_id", postId) }
-                order("created_at", Order.ASCENDING)
-            }.decodeList<CommentRow>()
-        }
-        val profiles = loadProfiles()
-        return rows.map {
-            UiComment(it.id, it.userId, profiles[it.userId]?.displayName ?: "User", it.text, it.createdAt)
-        }
-    }
-
-    suspend fun addComment(postId: String, text: String) {
-        val uid = recoverCurrentUserId() ?: error("Your session has expired. Please sign in again.")
-        requireAllowedUser()
-        val cleaned = text.trim()
-        require(cleaned.isNotEmpty())
-        require(cleaned.length <= 1000)
-        supabase.from("comments").insert(CommentInsert(postId, uid, cleaned))
-    }
-
-    suspend fun loadMessages(): List<UiChatMessage> {
-        requireAllowedUser()
-        val rows = retryNetworkRead {
-            supabase.from("messages").select {
-                order("created_at", Order.ASCENDING)
-            }.decodeList<MessageRow>()
-        }
-        val profiles = loadProfiles()
-        val reactions = retryNetworkRead {
-            supabase.from("message_reactions").select()
-                .decodeList<MessageReactionRow>()
-                .groupBy { it.messageId }
-        }
-        val bucket = supabase.storage.from("twoshare")
-
-        return rows.map { row ->
-            val mediaUrl = row.mediaPath?.let { path ->
-                signedUrlCache[path] ?: retryNetworkRead {
-                    bucket.createSignedUrl(path, 24.hours)
-                }.also { signedUrlCache[path] = it }
-            }
-            val grouped = reactions[row.id]
-                .orEmpty()
-                .groupBy { it.emoji }
-                .mapValues { entry -> entry.value.map { it.userId }.toSet() }
-            UiChatMessage(
-                row.id,
-                row.senderId,
-                profiles[row.senderId]?.displayName ?: "User",
-                row.body,
-                row.mediaType,
-                mediaUrl,
-                row.createdAt,
-                row.readAt,
-                grouped
-            )
-        }
-    }
-
-    suspend fun unreadMessageCount(): Int {
-        val uid = recoverCurrentUserId() ?: return 0
-        requireAllowedUser()
-        return retryNetworkRead {
-            supabase.from("messages").select {
-                filter {
-                    neq("sender_id", uid)
-                    exact("read_at", null)
-                }
-            }.decodeList<MessageRow>().size
-        }
-    }
-
-    suspend fun markIncomingMessagesRead() {
-        val uid = recoverCurrentUserId() ?: return
-        requireAllowedUser()
-        retryNetworkRead {
-            supabase.from("messages").update({
-                set("read_at", Instant.now().toString())
-            }) {
-                filter {
-                    neq("sender_id", uid)
-                    exact("read_at", null)
-                }
-            }
-        }
-    }
-
-    suspend fun sendMessage(context: Context, text: String, attachmentUri: Uri?) {
-        val uid = recoverCurrentUserId() ?: error("Your session has expired. Please sign in again.")
-        requireAllowedUser()
-        val cleaned = text.trim().takeIf { it.isNotEmpty() }
-        require(cleaned == null || cleaned.length <= 2000)
-        require(cleaned != null || attachmentUri != null)
-
-        var mediaPath: String? = null
-        var mediaType: String? = null
-        var mediaMime: String? = null
-
-        if (attachmentUri != null) {
-            val mime = context.contentResolver.getType(attachmentUri)?.lowercase()
-                ?: error("Unable to determine the attachment type.")
-            val type = when {
-                mime.startsWith("image/") -> "image"
-                mime.startsWith("video/") -> "video"
-                else -> error("Only photos and videos can be sent.")
-            }
-            val bytes = context.contentResolver.openInputStream(attachmentUri)?.use { it.readBytes() }
-                ?: error("Unable to read the selected attachment.")
-            require(bytes.size <= 25 * 1024 * 1024)
-            val path = "$uid/chat/${UUID.randomUUID()}.${fileExtension(mime, if (type == "video") "mp4" else "jpg")}"
-            supabase.storage.from("twoshare").upload(path, bytes) { upsert = false }
-            mediaPath = path
-            mediaType = type
-            mediaMime = mime
-        }
-
-        supabase.from("messages").insert(
-            MessageInsert(uid, cleaned, mediaPath, mediaType, mediaMime)
-        )
-    }
-
-    suspend fun toggleMessageReaction(message: UiChatMessage, emoji: String) {
-        val uid = recoverCurrentUserId() ?: error("Your session has expired. Please sign in again.")
-        requireAllowedUser()
-        require(emoji in allowedReactions)
-        if (message.reactions[emoji]?.contains(uid) == true) {
-            supabase.from("message_reactions").delete {
-                filter {
-                    eq("message_id", message.id)
-                    eq("user_id", uid)
-                    eq("emoji", emoji)
-                }
-            }
-        } else {
-            supabase.from("message_reactions").insert(
-                MessageReactionInsert(message.id, uid, emoji)
-            )
-        }
-    }
-
-    suspend fun createOutgoingCall(isVideo: Boolean): CallRow {
-        val uid = recoverCurrentUserId() ?: error("Your session has expired. Please sign in again.")
-        requireAllowedUser()
-        val other = loadProfiles().values.firstOrNull { it.id != uid }
-            ?: error("The second TwoShare account is not available.")
-        val call = supabase.from("calls")
-            .insert(CallInsert(uid, other.id, isVideo)) { select() }
-            .decodeSingle<CallRow>()
-        // The call row is authoritative. Push is a wake-up/alert path, so a
-        // temporary push failure must never cancel a call that was created.
-        runCatching { PushSender.notifyOther("call", callId = call.id) }
-        return call
-    }
-
-    suspend fun findIncomingCall(): CallRow? {
-        val uid = recoverCurrentUserId() ?: return null
-        val cutoff = Instant.now().minusSeconds(120)
-        return retryNetworkRead {
-            supabase.from("calls").select {
-                filter {
-                    eq("callee_id", uid)
-                    eq("status", "ringing")
-                }
-                order("created_at", Order.DESCENDING)
-            }.decodeList<CallRow>().firstOrNull {
-                runCatching { Instant.parse(it.createdAt).isAfter(cutoff) }.getOrDefault(false)
-            }
-        }
-    }
-
-    suspend fun getCall(callId: String): CallRow? {
-        requireAllowedUser()
-        return retryNetworkRead {
-            supabase.from("calls").select {
-                filter { eq("id", callId) }
-            }.decodeList<CallRow>().firstOrNull()
-        }
-    }
-
-    suspend fun partnerName(call: CallRow): String {
-        val uid = recoverCurrentUserId() ?: return "TwoShare"
-        val partnerId = if (call.callerId == uid) call.calleeId else call.callerId
-        return loadProfiles()[partnerId]?.displayName ?: "TwoShare"
-    }
-
-    suspend fun setCallOffer(callId: String, sdp: String) {
-        requireAllowedUser()
-        supabase.from("calls").update({ set("offer_sdp", sdp) }) {
-            filter { eq("id", callId) }
-        }
-    }
-
-    suspend fun acceptCall(callId: String, answerSdp: String) {
-        requireAllowedUser()
-        supabase.from("calls").update({
-            set("answer_sdp", answerSdp)
-            set("status", "accepted")
-            set("answered_at", Instant.now().toString())
-        }) {
-            filter { eq("id", callId) }
-        }
-    }
-
-    suspend fun setCallAnswer(callId: String, answerSdp: String) {
-        requireAllowedUser()
-        supabase.from("calls").update({
-            set("answer_sdp", answerSdp)
-            set("status", "accepted")
-        }) {
-            filter { eq("id", callId) }
-        }
-    }
-
-    suspend fun rejectCall(callId: String) = setCallStatus(callId, "rejected")
-    suspend fun cancelCall(callId: String) = setCallStatus(callId, "cancelled")
-    suspend fun endCall(callId: String) = setCallStatus(callId, "ended")
-
-    suspend fun markCallConnected(callId: String) {
-        requireAllowedUser()
-        val call = getCall(callId) ?: return
-        if (call.connectedAt != null) return
-        supabase.from("calls").update({
-            set("connected_at", Instant.now().toString())
-        }) { filter { eq("id", callId) } }
-    }
-
-    suspend fun updateCallTransport(callId: String, transport: String?) {
-        requireAllowedUser()
-        val normalized = transport?.trim()?.lowercase()?.takeIf { it in setOf("direct", "relay") }
-        supabase.from("calls").update({ set("transport", normalized) }) {
-            filter { eq("id", callId) }
-        }
-    }
-
-    private suspend fun setCallStatus(callId: String, status: String) {
-        requireAllowedUser()
-        supabase.from("calls").update({
-            set("status", status)
-            set("ended_at", Instant.now().toString())
-        }) {
-            filter { eq("id", callId) }
-        }
-    }
-
-    suspend fun loadProfiles(): Map<String, ProfileRow> = retryNetworkRead {
-        supabase.from("profiles").select().decodeList<ProfileRow>().associateBy { it.id }
-    }
-
-    suspend fun loadMessageReactions(messageId: String): Map<String, Set<String>> {
-        requireAllowedUser()
-        return retryNetworkRead {
-            supabase.from("message_reactions").select {
-                filter { eq("message_id", messageId) }
-            }.decodeList<MessageReactionRow>()
-                .groupBy { it.emoji }
-                .mapValues { entry -> entry.value.map { it.userId }.toSet() }
-        }
-    }
-
-    private fun fileExtension(mime: String?, fallback: String): String {
-        val fromMime = mime?.let { MimeTypeMap.getSingleton().getExtensionFromMimeType(it) }
-        return fromMime?.lowercase()?.takeIf { it.matches(Regex("[a-z0-9]{1,8}")) } ?: fallback
-    }
+    suspend fun createOutgoingCall(isVideo:Boolean):CallRow{val uid=recoverCurrentUserId()?:error("Your session has expired. Please sign in again.");requireAllowedUser();val other=loadProfiles().values.firstOrNull{it.id!=uid}?:error("The second TwoShare account is not available.");val call=supabase.from("calls").insert(CallInsert(uid,other.id,isVideo)){select()}.decodeSingle<CallRow>();runCatching{PushSender.notifyOther("call",callId=call.id)};return call}
+    suspend fun findIncomingCall():CallRow?{val uid=recoverCurrentUserId()?:return null;val cutoff=Instant.now().minusSeconds(120);return retryNetworkRead{supabase.from("calls").select{filter{eq("callee_id",uid);eq("status","ringing")};order("created_at",Order.DESCENDING)}.decodeList<CallRow>().firstOrNull{runCatching{Instant.parse(it.createdAt).isAfter(cutoff)}.getOrDefault(false)}}}
+    suspend fun loadCall(callId:String):CallRow?{requireAllowedUser();return retryNetworkRead{supabase.from("calls").select{filter{eq("id",callId)}}.decodeList<CallRow>().firstOrNull()}}
+    suspend fun loadCallHistory():List<CallRow>{requireAllowedUser();return retryNetworkRead{supabase.from("calls").select{order("created_at",Order.ASCENDING)}.decodeList<CallRow>()}}
+    suspend fun updateCallStatus(callId:String,status:String){requireAllowedUser();supabase.from("calls").update({set("status",status)}){filter{eq("id",callId)}}}
+    suspend fun updateCallOffer(callId:String,offer:String){requireAllowedUser();supabase.from("calls").update({set("offer_sdp",offer)}){filter{eq("id",callId)}}}
+    suspend fun updateCallAnswer(callId:String,answer:String){requireAllowedUser();supabase.from("calls").update({set("answer_sdp",answer)}){filter{eq("id",callId)}}}
+    suspend fun updateCallerIce(callId:String,candidates:List<String>){requireAllowedUser();supabase.from("calls").update({set("caller_ice",candidates)}){filter{eq("id",callId)}}}
+    suspend fun updateCalleeIce(callId:String,candidates:List<String>){requireAllowedUser();supabase.from("calls").update({set("callee_ice",candidates)}){filter{eq("id",callId)}}}
+    suspend fun loadProfiles():Map<String,ProfileRow>{return retryNetworkRead{supabase.from("profiles").select().decodeList<ProfileRow>().associateBy{it.id}}}
+    private fun fileExtension(mime:String?,fallback:String):String{val ext=mime?.let{MimeTypeMap.getSingleton().getExtensionFromMimeType(it)};return ext?.takeIf{it.isNotBlank()}?:fallback}
 }
