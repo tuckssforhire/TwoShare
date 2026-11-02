@@ -24,6 +24,7 @@ class ChatFeaturesRepository(private val base:TwoShareRepository){
  private val urlCache=mutableMapOf<String,String>()
  private var profileCache:Map<String,ProfileRow> = emptyMap()
  private var profileCacheAt=0L
+ private var cachedMessages:List<UiChatMessage> = emptyList()
 
  private suspend fun profiles():Map<String,ProfileRow>{
   val now=System.currentTimeMillis()
@@ -36,6 +37,10 @@ class ChatFeaturesRepository(private val base:TwoShareRepository){
  suspend fun loadMessages(pageSize:Int=60):List<UiChatMessage>{
   return try{
    check(base.currentUserId()!=null){"Your session has expired. Please sign in again."}
+   if(cachedMessages.isNotEmpty() && pageSize<=cachedMessages.size){
+    val newest=runCatching{base.retryNetworkRead{supabase.from("messages").select{order("created_at",Order.DESCENDING);limit(1)}.decodeList<ChatMessageRow>().firstOrNull()?.id}}.getOrNull()
+    if(newest!=null && newest==cachedMessages.lastOrNull()?.id)return cachedMessages.takeLast(pageSize)
+   }
    val rows=base.retryNetworkRead{supabase.from("messages").select{order("created_at",Order.DESCENDING);limit(pageSize.toLong())}.decodeList<ChatMessageRow>()}.asReversed()
    val profiles=profiles()
    val ids=rows.map{it.id}.toSet()
@@ -43,22 +48,18 @@ class ChatFeaturesRepository(private val base:TwoShareRepository){
    val edits=if(ids.isEmpty()) emptyMap() else runCatching{base.retryNetworkRead{supabase.from("message_edits").select{order("edited_at",Order.ASCENDING)}.decodeList<EditRow>().filter{it.messageId in ids}.groupBy{it.messageId}}}.getOrDefault(emptyMap())
    val byId=rows.associateBy{it.id};val bucket=supabase.storage.from("twoshare")
    val result=rows.mapNotNull{row->runCatching{val mediaUrl=row.mediaPath?.let{path->urlCache[path]?:runCatching{base.retryNetworkRead{bucket.createSignedUrl(path,24.hours)}}.getOrNull()?.also{urlCache[path]=it}};val reply=row.replyToId?.let(byId::get);UiChatMessage(row.id,row.senderId,profiles[row.senderId]?.displayName?:if(row.senderId==base.currentUserId())"You" else "User",row.body,row.mediaType,mediaUrl,row.createdAt,row.readAt,reactions[row.id].orEmpty().groupBy{it.emoji}.mapValues{e->e.value.map{it.userId}.toSet()},row.clientId,row.replyToId,reply?.body?.take(120)?:if(reply?.mediaType!=null)"${reply.mediaType} attachment" else null,row.editedAt,row.deliveredAt,edits[row.id].orEmpty().map{MessageEditVersion(it.oldBody.orEmpty(),it.editedAt)},"sent")}.getOrNull()}
-   OfflineCache.saveMessages(result);ConnectionStatus.online();result
-  }catch(t:Throwable){if(base.isTransientNetworkError(t)){ConnectionStatus.connecting();OfflineCache.loadMessages().takeLast(pageSize)}else throw t}
+   cachedMessages=result;OfflineCache.saveMessages(result);ConnectionStatus.online();result
+  }catch(t:Throwable){if(base.isTransientNetworkError(t)){ConnectionStatus.connecting();cachedMessages.ifEmpty{OfflineCache.loadMessages().takeLast(pageSize)}}else throw t}
  }
 
  private fun readAttachmentBounded(context:Context,uri:Uri,maxBytes:Int):ByteArray{
   context.contentResolver.openAssetFileDescriptor(uri,"r")?.use{fd->if(fd.length>maxBytes)error("Attachment must be ${maxBytes/1024/1024} MB or smaller.")}
   val input=context.contentResolver.openInputStream(uri)?:error("Unable to read attachment.")
-  input.use{stream->
-   val out=ByteArrayOutputStream(minOf(maxBytes,1024*1024));val buffer=ByteArray(64*1024);var total=0
-   while(true){val n=stream.read(buffer);if(n<0)break;total+=n;if(total>maxBytes)error("Attachment must be ${maxBytes/1024/1024} MB or smaller.");out.write(buffer,0,n)}
-   return out.toByteArray()
-  }
+  input.use{stream->val out=ByteArrayOutputStream(minOf(maxBytes,1024*1024));val buffer=ByteArray(64*1024);var total=0;while(true){val n=stream.read(buffer);if(n<0)break;total+=n;if(total>maxBytes)error("Attachment must be ${maxBytes/1024/1024} MB or smaller.");out.write(buffer,0,n)};return out.toByteArray()}
  }
 
- suspend fun sendMessage(context:Context,text:String,attachmentUri:Uri?,clientId:String,replyToId:String?):UiChatMessage{val uid=base.currentUserId()?:error("Your session has expired. Please sign in again.");val cleaned=text.trim().takeIf{it.isNotEmpty()};require(cleaned==null||cleaned.length<=2000);require(cleaned!=null||attachmentUri!=null);var mediaPath:String?=null;var mediaType:String?=null;var mediaMime:String?=null;if(attachmentUri!=null){val mime=context.contentResolver.getType(attachmentUri)?.lowercase()?:error("Unable to determine attachment type.");val type=when{mime.startsWith("image/")->"image";mime.startsWith("video/")->"video";else->error("Only photos and videos can be sent.")};val maxBytes=15*1024*1024;val bytes=readAttachmentBounded(context,attachmentUri,maxBytes);val ext=MimeTypeMap.getSingleton().getExtensionFromMimeType(mime)?:if(type=="video")"mp4" else "jpg";mediaPath="$uid/chat/${UUID.randomUUID()}.$ext";supabase.storage.from("twoshare").upload(mediaPath,bytes){upsert=false};mediaType=type;mediaMime=mime};val row=supabase.from("messages").insert(ChatMessageInsert(uid,cleaned,mediaPath,mediaType,mediaMime,clientId,replyToId)){select()}.decodeSingle<ChatMessageRow>();runCatching{PushSender.notifyOther(if(replyToId==null)"message" else "reply",messageId=row.id)};return UiChatMessage(row.id,uid,"You",row.body,row.mediaType,attachmentUri?.toString(),row.createdAt,row.readAt,emptyMap(),row.clientId,row.replyToId,null,row.editedAt,row.deliveredAt,emptyList(),"sent")}
+ suspend fun sendMessage(context:Context,text:String,attachmentUri:Uri?,clientId:String,replyToId:String?):UiChatMessage{val uid=base.currentUserId()?:error("Your session has expired. Please sign in again.");val cleaned=text.trim().takeIf{it.isNotEmpty()};require(cleaned==null||cleaned.length<=2000);require(cleaned!=null||attachmentUri!=null);var mediaPath:String?=null;var mediaType:String?=null;var mediaMime:String?=null;if(attachmentUri!=null){val mime=context.contentResolver.getType(attachmentUri)?.lowercase()?:error("Unable to determine the attachment type.");val type=when{mime.startsWith("image/")->"image";mime.startsWith("video/")->"video";else->error("Only photos and videos can be sent.")};val maxBytes=15*1024*1024;val bytes=readAttachmentBounded(context,attachmentUri,maxBytes);val ext=MimeTypeMap.getSingleton().getExtensionFromMimeType(mime)?:if(type=="video")"mp4" else "jpg";mediaPath="$uid/chat/${UUID.randomUUID()}.$ext";supabase.storage.from("twoshare").upload(mediaPath,bytes){upsert=false};mediaType=type;mediaMime=mime};val row=supabase.from("messages").insert(ChatMessageInsert(uid,cleaned,mediaPath,mediaType,mediaMime,clientId,replyToId)){select()}.decodeSingle<ChatMessageRow>();runCatching{PushSender.notifyOther(if(replyToId==null)"message" else "reply",messageId=row.id)};return UiChatMessage(row.id,uid,"You",row.body,row.mediaType,attachmentUri?.toString(),row.createdAt,row.readAt,emptyMap(),row.clientId,row.replyToId,null,row.editedAt,row.deliveredAt,emptyList(),"sent")}
  suspend fun markIncomingDelivered(){val uid=base.currentUserId()?:return;supabase.from("messages").update({set("delivered_at",Instant.now().toString())}){filter{neq("sender_id",uid);exact("delivered_at",null)}}}
  suspend fun markIncomingRead(){val uid=base.currentUserId()?:return;supabase.from("messages").update({set("read_at",Instant.now().toString());set("delivered_at",Instant.now().toString())}){filter{neq("sender_id",uid);exact("read_at",null)}}}
- suspend fun editMessage(message:UiChatMessage,newText:String){val uid=base.currentUserId()?:error("Session expired");require(message.senderId==uid){"You can only edit your own message."};val cleaned=newText.trim();require(cleaned.isNotEmpty()&&cleaned.length<=2000);if(cleaned==message.body)return;supabase.from("message_edits").insert(EditInsert(message.id,uid,message.body));supabase.from("messages").update({set("body",cleaned);set("edited_at",Instant.now().toString())}){filter{eq("id",message.id);eq("sender_id",uid)}}}
+ suspend fun editMessage(message:UiChatMessage,newText:String){val uid=base.currentUserId()?:error("Session expired");require(message.senderId==uid){"You can only edit your own message."};val cleaned=newText.trim();require(cleaned.isNotEmpty()&&cleaned.length<=2000);if(cleaned==message.body)return;supabase.from("message_edits").insert(EditInsert(message.id,uid,message.body));supabase.from("messages").update({set("body",cleaned);set("edited_at",Instant.now().toString())}){filter{eq("id",message.id);eq("sender_id",uid)}};cachedMessages=emptyList()}
 }
