@@ -40,6 +40,23 @@ tasks.configureEach {
                 "\n if(heartBurst>0)key(heartBurst){FloatingThinkingHeart()}"
             )
             messenger.writeText(messengerText)
+
+            // Give Feed posts the same quick reactions + expanded emoji picker as Messenger.
+            val feed = file("src/main/java/com/twoshare/app/ui/FeedScreen.kt")
+            var feedText = feed.readText()
+            feedText = feedText.replace(
+                "var reactionMenu by remember(post.id){mutableStateOf(false)};val mine=",
+                "var reactionMenu by remember(post.id){mutableStateOf(false)};var moreReactions by remember(post.id){mutableStateOf(false)};val mine="
+            )
+            feedText = feedText.replace(
+                "choices.forEach{emoji->Text(emoji,style=MaterialTheme.typography.headlineSmall,modifier=Modifier.clickable{reactionMenu=false;onReact(emoji)}.padding(5.dp))}",
+                "choices.forEach{emoji->Text(emoji,style=MaterialTheme.typography.headlineSmall,modifier=Modifier.clickable{reactionMenu=false;onReact(emoji)}.padding(5.dp))};Text(\"＋\",style=MaterialTheme.typography.headlineSmall,modifier=Modifier.clickable{reactionMenu=false;moreReactions=true}.padding(5.dp))"
+            )
+            feedText = feedText.replace(
+                "}}}};TextButton(onClick=onComments){Text(\"Comment\")}",
+                "}}};if(moreReactions)FeedEmojiPickerDialog({moreReactions=false}){emoji->moreReactions=false;onReact(emoji)}};TextButton(onClick=onComments){Text(\"Comment\")}"
+            )
+            feed.writeText(feedText)
         }
     }
 }
