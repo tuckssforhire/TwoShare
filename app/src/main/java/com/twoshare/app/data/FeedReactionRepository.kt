@@ -1,6 +1,8 @@
 package com.twoshare.app.data
 
+import com.twoshare.app.model.PostRow
 import io.github.jan.supabase.postgrest.from
+import io.github.jan.supabase.postgrest.query.Order
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -21,6 +23,16 @@ private data class FeedReactionInsert(
 class FeedReactionRepository(private val base: TwoShareRepository) {
     private val supabase = SupabaseProvider.client
     val choices = listOf("❤️", "👍", "😂", "😍", "😮", "😢", "🔥", "🥰", "👏", "🎉")
+
+    suspend fun hasNewPost(currentNewestId: String?): Boolean = runCatching {
+        val newest = base.retryNetworkRead {
+            supabase.from("posts").select {
+                order("created_at", Order.DESCENDING)
+                limit(1)
+            }.decodeList<PostRow>().firstOrNull()?.id
+        }
+        newest != currentNewestId
+    }.getOrDefault(false)
 
     suspend fun load(): Map<String, Map<String, Set<String>>> = runCatching {
         base.retryNetworkRead {
