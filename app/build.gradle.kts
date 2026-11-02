@@ -29,39 +29,26 @@ tasks.configureEach {
             val messenger = file("src/main/java/com/twoshare/app/ui/MessengerScreenV2.kt")
             var messengerText = messenger.readText()
             if (!messengerText.contains("androidx.compose.foundation.lazy.grid.*")) {
-                messengerText = messengerText.replace(
-                    "import androidx.compose.foundation.lazy.*",
-                    "import androidx.compose.foundation.lazy.*\nimport androidx.compose.foundation.lazy.grid.*"
-                )
+                messengerText = messengerText.replace("import androidx.compose.foundation.lazy.*", "import androidx.compose.foundation.lazy.*\nimport androidx.compose.foundation.lazy.grid.*")
             }
-            messengerText = messengerText.replace(
-                "\n }\n if(heartBurst>0)key(heartBurst){FloatingThinkingHeart()}",
-                "\n if(heartBurst>0)key(heartBurst){FloatingThinkingHeart()}"
-            )
+            messengerText = messengerText.replace("\n }\n if(heartBurst>0)key(heartBurst){FloatingThinkingHeart()}", "\n if(heartBurst>0)key(heartBurst){FloatingThinkingHeart()}")
             messenger.writeText(messengerText)
 
             val feed = file("src/main/java/com/twoshare/app/ui/FeedScreen.kt")
             var feedText = feed.readText()
-            feedText = feedText.replace(
-                "PostCard(post,repository.currentUserId(),avatarRefresh",
-                "PostCard(post,repository,repository.currentUserId(),avatarRefresh"
-            )
-            feedText = feedText.replace(
-                "PostCard(post:FeedPost,currentUid:String?",
-                "PostCard(post:FeedPost,repository:TwoShareRepository,currentUid:String?"
-            )
-            feedText = feedText.replace(
-                "if(reactions.isNotEmpty())Text(reactions.entries.joinToString(\"  \"){\"${'$'}{it.key} ${'$'}{it.value.size}\"},Modifier.padding(horizontal=14.dp,vertical=5.dp),style=MaterialTheme.typography.labelMedium);HorizontalDivider",
-                "if(reactions.isNotEmpty())Text(reactions.entries.joinToString(\"  \"){\"${'$'}{it.key} ${'$'}{it.value.size}\"},Modifier.padding(horizontal=14.dp,vertical=5.dp),style=MaterialTheme.typography.labelMedium);FeedCommentPreview(post,repository,onComments);HorizontalDivider"
-            )
-            feedText = feedText.replace(
-                "Box{TextButton(onClick={onReact(mine?:\"❤️\")},modifier=Modifier.combinedClickable(onClick={onReact(mine?:\"❤️\")},onLongClick={reactionMenu=true})){Text(mine?:\"♡\");Spacer(Modifier.width(6.dp));Text(if(total==0)\"React\" else total.toString())};DropdownMenu(reactionMenu,{reactionMenu=false}){Row(Modifier.padding(horizontal=8.dp,vertical=6.dp),horizontalArrangement=Arrangement.spacedBy(4.dp)){choices.forEach{emoji->Text(emoji,style=MaterialTheme.typography.headlineSmall,modifier=Modifier.clickable{reactionMenu=false;onReact(emoji)}.padding(5.dp))}}}}",
-                "FeedReactionButton(mine,total,choices,onReact)"
-            )
-            feedText = feedText.replace(
-                "TextButton(onClick=onComments){Text(\"Comment\")}",
-                "TextButton(onClick={FeedCommentExpansion.toggle(post.id)}){Text(\"Comment\")}"
-            )
+            feedText = feedText.replace("import androidx.compose.foundation.lazy.LazyColumn\nimport androidx.compose.foundation.lazy.items", "import androidx.compose.foundation.lazy.LazyColumn\nimport androidx.compose.foundation.lazy.items\nimport androidx.compose.foundation.lazy.rememberLazyListState")
+            feedText = feedText.replace("import androidx.compose.material.icons.filled.MoreVert", "import androidx.compose.material.icons.filled.MoreVert\nimport androidx.compose.material.icons.filled.Notifications")
+            feedText = feedText.replace("val context=LocalContext.current;val scope=rememberCoroutineScope();val presence=remember{PresenceRepository()};val reactionRepo=remember(repository){FeedReactionRepository(repository)};", "val context=LocalContext.current;val scope=rememberCoroutineScope();val presence=remember{PresenceRepository()};val reactionRepo=remember(repository){FeedReactionRepository(repository)};val feedNotificationRepo=remember(repository){FeedNotificationRepository(repository)};val feedListState=rememberLazyListState();")
+            feedText = feedText.replace("var avatarRefresh by remember{mutableLongStateOf(0L)}", "var avatarRefresh by remember{mutableLongStateOf(0L)};var feedNotifications by remember{mutableStateOf(emptyList<FeedNotification>())};var showFeedNotifications by remember{mutableStateOf(false)}")
+            feedText = feedText.replace("LaunchedEffect(Unit){refresh(true);while(isActive){delay(10000);", "LaunchedEffect(Unit){refresh(true);feedNotifications=runCatching{feedNotificationRepo.load()}.getOrDefault(emptyList());while(isActive){delay(10000);feedNotifications=runCatching{feedNotificationRepo.load()}.getOrDefault(feedNotifications);")
+            feedText = feedText.replace("actions={FilledTonalIconButton(onClick=onOpenCalendar)", "actions={BadgedBox(badge={val n=feedNotifications.count{!it.isRead};if(n>0)Badge{Text(if(n>99)\"99+\" else n.toString())}}){FilledTonalIconButton(onClick={showFeedNotifications=true}){Icon(Icons.Default.Notifications,\"Feed notifications\")}};Spacer(Modifier.width(4.dp));FilledTonalIconButton(onClick=onOpenCalendar)")
+            feedText = feedText.replace("else->LazyColumn(Modifier.fillMaxSize(),contentPadding=", "else->LazyColumn(state=feedListState,modifier=Modifier.fillMaxSize(),contentPadding=")
+            feedText = feedText.replace("PostCard(post,repository.currentUserId(),avatarRefresh", "PostCard(post,repository,repository.currentUserId(),avatarRefresh")
+            feedText = feedText.replace("PostCard(post:FeedPost,currentUid:String?", "PostCard(post:FeedPost,repository:TwoShareRepository,currentUid:String?")
+            feedText = feedText.replace("if(reactions.isNotEmpty())Text(reactions.entries.joinToString(\"  \"){\"${'$'}{it.key} ${'$'}{it.value.size}\"},Modifier.padding(horizontal=14.dp,vertical=5.dp),style=MaterialTheme.typography.labelMedium);HorizontalDivider", "if(reactions.isNotEmpty())Text(reactions.entries.joinToString(\"  \"){\"${'$'}{it.key} ${'$'}{it.value.size}\"},Modifier.padding(horizontal=14.dp,vertical=5.dp),style=MaterialTheme.typography.labelMedium);FeedCommentPreview(post,repository,onComments);HorizontalDivider")
+            feedText = feedText.replace("Box{TextButton(onClick={onReact(mine?:\"❤️\")},modifier=Modifier.combinedClickable(onClick={onReact(mine?:\"❤️\")},onLongClick={reactionMenu=true})){Text(mine?:\"♡\");Spacer(Modifier.width(6.dp));Text(if(total==0)\"React\" else total.toString())};DropdownMenu(reactionMenu,{reactionMenu=false}){Row(Modifier.padding(horizontal=8.dp,vertical=6.dp),horizontalArrangement=Arrangement.spacedBy(4.dp)){choices.forEach{emoji->Text(emoji,style=MaterialTheme.typography.headlineSmall,modifier=Modifier.clickable{reactionMenu=false;onReact(emoji)}.padding(5.dp))}}}}", "FeedReactionButton(mine,total,choices,onReact)")
+            feedText = feedText.replace("TextButton(onClick=onComments){Text(\"Comment\")}", "TextButton(onClick={FeedCommentExpansion.toggle(post.id)}){Text(\"Comment\")}")
+            feedText = feedText.replace("if(showAccountSettings)AccountSettingsDialog", "if(showFeedNotifications)FeedNotificationsDialog(feedNotifications,{showFeedNotifications=false},{notification->scope.launch{runCatching{feedNotificationRepo.markRead(notification.id)};feedNotifications=runCatching{feedNotificationRepo.load()}.getOrDefault(feedNotifications);showFeedNotifications=false;val index=posts.indexOfFirst{it.id==notification.postId};if(index>=0){if(notification.opensComments)FeedCommentExpansion.expand(notification.postId);feedListState.animateScrollToItem(index)}}},{scope.launch{runCatching{feedNotificationRepo.markAllRead()};feedNotifications=runCatching{feedNotificationRepo.load()}.getOrDefault(feedNotifications)}});if(showAccountSettings)AccountSettingsDialog")
             feed.writeText(feedText)
         }
     }
