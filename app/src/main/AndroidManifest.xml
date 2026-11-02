@@ -24,7 +24,7 @@
         <service android:name=".push.TwoShareFirebaseMessagingService" android:exported="false">
             <intent-filter><action android:name="com.google.firebase.MESSAGING_EVENT" /></intent-filter>
         </service>
-        <activity android:name=".MainActivity" android:exported="true" android:showWhenLocked="true" android:turnScreenOn="true" android:windowSoftInputMode="adjustResize" android:windowSoftInputMode="adjustResize">
+        <activity android:name=".MainActivity" android:exported="true" android:showWhenLocked="true" android:turnScreenOn="true" android:windowSoftInputMode="adjustResize" android:windowSoftInputMode="adjustResize" android:windowSoftInputMode="adjustResize">
             <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
             <intent-filter><action android:name="android.intent.action.VIEW" /><category android:name="android.intent.category.DEFAULT" /><category android:name="android.intent.category.BROWSABLE" /><data android:scheme="twoshare" android:host="login" /></intent-filter>
         </activity>
