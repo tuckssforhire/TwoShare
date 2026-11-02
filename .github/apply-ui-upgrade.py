@@ -1,48 +1,42 @@
 from pathlib import Path
 
-# Keep this workflow idempotent: only apply missing UI enhancements.
-p=Path('app/src/main/AndroidManifest.xml'); s=p.read_text()
-s=s.replace(' android:windowSoftInputMode="adjustResize" android:windowSoftInputMode="adjustResize"',' android:windowSoftInputMode="adjustResize"')
-p.write_text(s)
+# Feed avatar stabilization. Previous UI migrations are already in source; keep this
+# migration small and idempotent so the workflow cannot regress Messenger again.
+p = Path('app/src/main/java/com/twoshare/app/ui/FeedScreen.kt')
+s = p.read_text()
 
-p=Path('app/src/main/java/com/twoshare/app/ui/MessengerScreenV2.kt'); s=p.read_text()
-# Persistent local chat theme selection.
-old='var messages by remember{mutableStateOf(OfflineCache.loadMessages().takeLast(MESSAGE_PAGE))};'
-new='val chatPrefs=remember{context.getSharedPreferences("twoshare_chat",Context.MODE_PRIVATE)};var chatTheme by remember{mutableIntStateOf(chatPrefs.getInt("theme",0))};var themePicker by remember{mutableStateOf(false)};'+old
-if 'chatPrefs=remember' not in s: s=s.replace(old,new,1)
-# Chat background and day separators.
-old='LazyColumn(state=listState,modifier=Modifier.fillMaxSize(),contentPadding=PaddingValues(12.dp),verticalArrangement=Arrangement.spacedBy(2.dp)){itemsIndexed(timeline,key={_,entry->'
-new='val chatBackground=when(chatTheme){1->MaterialTheme.colorScheme.primaryContainer.copy(alpha=.18f);2->MaterialTheme.colorScheme.tertiaryContainer.copy(alpha=.20f);3->MaterialTheme.colorScheme.secondaryContainer.copy(alpha=.20f);else->MaterialTheme.colorScheme.surfaceContainerLowest};LazyColumn(state=listState,modifier=Modifier.fillMaxSize().background(chatBackground),contentPadding=PaddingValues(12.dp),verticalArrangement=Arrangement.spacedBy(2.dp)){itemsIndexed(timeline,key={_,entry->'
-if 'val chatBackground=when(chatTheme)' not in s: s=s.replace(old,new,1)
-old='){_,entry->val item=entry.second;if(item is UiChatMessage){'
-new='){index,entry->val item=entry.second;val previous=timeline.getOrNull(index-1);if(previous==null||dayKey(previous.first)!=dayKey(entry.first))DateDivider(entry.first);if(item is UiChatMessage){'
-if 'dayKey(previous.first)' not in s: s=s.replace(old,new,1)
-# Compact Messenger header: keep calls visible, move secondary actions under overflow.
-if 'var headerMenu by remember' not in s:
-    anchor='var initialScrollDone by remember{mutableStateOf(false)}'
-    s=s.replace(anchor,anchor+';var headerMenu by remember{mutableStateOf(false)};var heartBurst by remember{mutableIntStateOf(0)};var thinkingLocked by remember{mutableStateOf(false)}',1)
-elif 'var thinkingLocked by remember' not in s:
-    s=s.replace('var heartBurst by remember{mutableIntStateOf(0)}','var heartBurst by remember{mutableIntStateOf(0)};var thinkingLocked by remember{mutableStateOf(false)}',1)
-old='DropdownMenuItem(text={Text("Thinking of you")},leadingIcon={Icon(Icons.Default.Favorite,null)},onClick={headerMenu=false;heartBurst++;draft="❤️ Thinking of you";send()});DropdownMenuItem(text={Text("Chat theme")},leadingIcon={Icon(Icons.Default.Palette,null)},onClick={headerMenu=false;themePicker=true})'
-new='DropdownMenuItem(text={Column{Text("Thinking of you",style=MaterialTheme.typography.bodyLarge);Text(if(thinkingLocked)"Just sent · wait a moment" else "Send a little heart",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}},leadingIcon={Surface(shape=CircleShape,color=MaterialTheme.colorScheme.primaryContainer){Icon(Icons.Default.Favorite,null,Modifier.padding(8.dp),tint=MaterialTheme.colorScheme.primary)}},enabled=!thinkingLocked,onClick={headerMenu=false;if(!thinkingLocked){thinkingLocked=true;heartBurst++;draft="❤️ Thinking of you";send();scope.launch{delay(1000);thinkingLocked=false}}});DropdownMenuItem(text={Column{Text("Chat theme",style=MaterialTheme.typography.bodyLarge);Text("Personalize your conversation",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}},leadingIcon={Surface(shape=CircleShape,color=MaterialTheme.colorScheme.secondaryContainer){Icon(Icons.Default.Palette,null,Modifier.padding(8.dp))}},onClick={headerMenu=false;themePicker=true})'
-if old in s: s=s.replace(old,new,1)
-# Polished theme chooser: visual preview cards instead of plain text buttons.
-old='if(themePicker)AlertDialog(onDismissRequest={themePicker=false},title={Text("Chat theme")},text={Column{listOf("Default","Blush","Lavender","Ocean").forEachIndexed{i,label->TextButton(onClick={chatTheme=i;chatPrefs.edit().putInt("theme",i).apply();themePicker=false},modifier=Modifier.fillMaxWidth()){Text((if(chatTheme==i)"✓ " else "")+label)}}}},confirmButton={TextButton(onClick={themePicker=false}){Text("Close")}})'
-new='if(themePicker)AlertDialog(onDismissRequest={themePicker=false},shape=RoundedCornerShape(28.dp),title={Column{Text("Chat theme",style=MaterialTheme.typography.headlineSmall);Text("Choose the mood for your conversation",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}},text={Column(verticalArrangement=Arrangement.spacedBy(10.dp)){listOf("Default","Blush","Lavender","Ocean").forEachIndexed{i,label->val preview=when(i){1->MaterialTheme.colorScheme.primaryContainer;2->MaterialTheme.colorScheme.tertiaryContainer;3->MaterialTheme.colorScheme.secondaryContainer;else->MaterialTheme.colorScheme.surfaceContainerHigh};Surface(onClick={chatTheme=i;chatPrefs.edit().putInt("theme",i).apply();themePicker=false},shape=RoundedCornerShape(18.dp),color=preview.copy(alpha=.62f),border=if(chatTheme==i)BorderStroke(2.dp,MaterialTheme.colorScheme.primary)else BorderStroke(1.dp,MaterialTheme.colorScheme.outlineVariant),modifier=Modifier.fillMaxWidth()){Row(Modifier.padding(14.dp),verticalAlignment=Alignment.CenterVertically){Surface(Modifier.size(38.dp),shape=CircleShape,color=preview){Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center){Text(if(i==0)"Aa" else "♥",style=MaterialTheme.typography.titleMedium)}};Spacer(Modifier.width(12.dp));Column(Modifier.weight(1f)){Text(label,style=MaterialTheme.typography.titleSmall);Text(if(i==0)"Clean and simple" else "Soft $label tones",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)};if(chatTheme==i)Icon(Icons.Default.CheckCircle,"Selected",tint=MaterialTheme.colorScheme.primary)}}}}},confirmButton={TextButton(onClick={themePicker=false}){Text("Done")}})'
-if old in s: s=s.replace(old,new,1)
-# Polished message action/reaction sheet.
-old='if(actions)AlertDialog(onDismissRequest={actions=false},title={Text("React or message action")},text={Column{Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceEvenly){reactionChoices.forEach{e->Text(e,style=MaterialTheme.typography.headlineSmall,modifier=Modifier.clickable{react(e);actions=false})};TextButton(onClick={actions=false;emojiPicker=true}){Text("+")}};TextButton(onClick={reply();actions=false},modifier=Modifier.fillMaxWidth()){Text("Reply")};if(mine&&message.localState=="sent"&&message.body!=null)TextButton(onClick={edit();actions=false},modifier=Modifier.fillMaxWidth()){Text("Edit")}}},confirmButton={})'
-new='if(actions)AlertDialog(onDismissRequest={actions=false},shape=RoundedCornerShape(28.dp),title={Text("Message options",style=MaterialTheme.typography.titleLarge)},text={Column(verticalArrangement=Arrangement.spacedBy(14.dp)){Surface(shape=RoundedCornerShape(22.dp),color=MaterialTheme.colorScheme.surfaceContainerHigh){Column(Modifier.padding(10.dp)){Text("Quick reaction",Modifier.padding(horizontal=6.dp,vertical=4.dp),style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.onSurfaceVariant);LazyRow(horizontalArrangement=Arrangement.spacedBy(7.dp)){items(reactionChoices){e->Surface(onClick={react(e);actions=false},shape=CircleShape,color=MaterialTheme.colorScheme.surface,tonalElevation=2.dp){Text(e,fontSize=25.sp,modifier=Modifier.padding(9.dp))}}};TextButton(onClick={actions=false;emojiPicker=true},modifier=Modifier.align(Alignment.End)){Icon(Icons.Default.AddReaction,null);Spacer(Modifier.width(5.dp));Text("More emoji")}}};Surface(onClick={reply();actions=false},shape=RoundedCornerShape(16.dp),color=MaterialTheme.colorScheme.surfaceContainer,modifier=Modifier.fillMaxWidth()){Row(Modifier.padding(14.dp),verticalAlignment=Alignment.CenterVertically){Icon(Icons.Default.Reply,null);Spacer(Modifier.width(12.dp));Text("Reply",style=MaterialTheme.typography.titleSmall)}};if(mine&&message.localState=="sent"&&message.body!=null)Surface(onClick={edit();actions=false},shape=RoundedCornerShape(16.dp),color=MaterialTheme.colorScheme.surfaceContainer,modifier=Modifier.fillMaxWidth()){Row(Modifier.padding(14.dp),verticalAlignment=Alignment.CenterVertically){Icon(Icons.Default.Edit,null);Spacer(Modifier.width(12.dp));Text("Edit message",style=MaterialTheme.typography.titleSmall)}}}},confirmButton={})'
-if old in s: s=s.replace(old,new,1)
-# Polished custom emoji entry dialog.
-old='@Composable private fun EmojiPickerDialog(onDismiss:()->Unit,onEmoji:(String)->Unit){var emoji by remember{mutableStateOf("")};val focus=remember{FocusRequester()};AlertDialog(onDismissRequest=onDismiss,title={Text("Choose any emoji")},text={OutlinedTextField(emoji,{emoji=it.take(16)},Modifier.fillMaxWidth().focusRequester(focus),singleLine=true,keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Text),placeholder={Text("😀")});LaunchedEffect(Unit){delay(150);focus.requestFocus()}},confirmButton={TextButton(onClick={onEmoji(emoji)},enabled=emoji.isNotBlank()){Text("React")}},dismissButton={TextButton(onClick=onDismiss){Text("Cancel")}})}'
-new='@Composable private fun EmojiPickerDialog(onDismiss:()->Unit,onEmoji:(String)->Unit){var emoji by remember{mutableStateOf("")};val focus=remember{FocusRequester()};AlertDialog(onDismissRequest=onDismiss,shape=RoundedCornerShape(28.dp),title={Column{Text("Pick an emoji",style=MaterialTheme.typography.headlineSmall);Text("Use any emoji from your keyboard",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}},text={Column(horizontalAlignment=Alignment.CenterHorizontally){Surface(shape=RoundedCornerShape(22.dp),color=MaterialTheme.colorScheme.surfaceContainerHigh,modifier=Modifier.fillMaxWidth()){Box(Modifier.padding(18.dp),contentAlignment=Alignment.Center){OutlinedTextField(emoji,{emoji=it.take(16)},Modifier.fillMaxWidth().focusRequester(focus),singleLine=true,textStyle=MaterialTheme.typography.headlineMedium,keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Text),placeholder={Text("😀  Tap your emoji keyboard")},shape=RoundedCornerShape(18.dp))}};LaunchedEffect(Unit){delay(150);focus.requestFocus()}},confirmButton={Button(onClick={onEmoji(emoji)},enabled=emoji.isNotBlank(),shape=RoundedCornerShape(16.dp)){Icon(Icons.Default.AddReaction,null);Spacer(Modifier.width(6.dp));Text("React")}},dismissButton={TextButton(onClick=onDismiss){Text("Cancel")}})}'
-if old in s: s=s.replace(old,new,1)
-# Floating heart animation overlay in the chat area.
-if '@Composable private fun FloatingThinkingHeart' not in s:
-    marker='\nprivate fun dayKey(ms:Long):LocalDate='
-    helper='''\n@Composable private fun FloatingThinkingHeart(){var go by remember{mutableStateOf(false)};LaunchedEffect(Unit){go=true};val rise by androidx.compose.animation.core.animateDpAsState(if(go)(-150).dp else 0.dp,animationSpec=androidx.compose.animation.core.tween(900),label="heartRise");val alpha by animateFloatAsState(if(go)0f else 1f,animationSpec=androidx.compose.animation.core.tween(900),label="heartFade");val scale by animateFloatAsState(if(go)1.65f else .75f,animationSpec=androidx.compose.animation.core.tween(420),label="heartScale");Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center){Text("❤️",fontSize=46.sp,modifier=Modifier.offset(y=rise).graphicsLayer{this.alpha=alpha;scaleX=scale;scaleY=scale})}}\n'''
-    s=s.replace(marker,helper+marker,1)
-if 'import androidx.compose.ui.graphics.graphicsLayer' not in s:
-    s=s.replace('import androidx.compose.ui.graphics.Color','import androidx.compose.ui.graphics.Color\nimport androidx.compose.ui.graphics.graphicsLayer',1)
+# Give feed cards a refresh token so profile-photo URLs are re-resolved periodically
+# and after feed refreshes instead of being permanently remembered from first compose.
+old = 'var showAccountSettings by remember{mutableStateOf(false)};var menuOpen by remember{mutableStateOf(false)}'
+new = old + ';var avatarRefresh by remember{mutableLongStateOf(0L)}'
+if 'var avatarRefresh by remember' not in s:
+    s = s.replace(old, new, 1)
+
+old = 'LaunchedEffect(Unit){while(isActive){runCatching{presence.heartbeat()};delay(30000)}}'
+new = old + '\n LaunchedEffect(Unit){while(isActive){delay(60000);avatarRefresh++}}'
+if 'delay(60000);avatarRefresh++' not in s:
+    s = s.replace(old, new, 1)
+
+old = 'PostCard(post,repository.currentUserId(),reactions[post.id].orEmpty(),reactionRepo.choices,'
+new = 'PostCard(post,repository.currentUserId(),avatarRefresh,reactions[post.id].orEmpty(),reactionRepo.choices,'
+if old in s:
+    s = s.replace(old, new)
+
+old = '@Composable private fun PostCard(post:FeedPost,currentUid:String?,reactions:Map<String,Set<String>>,choices:List<String>,'
+new = '@Composable private fun PostCard(post:FeedPost,currentUid:String?,avatarRefresh:Long,reactions:Map<String,Set<String>>,choices:List<String>,'
+if old in s:
+    s = s.replace(old, new, 1)
+
+old = 'val avatar by produceState<String?>(null,post.userId){value=ProfilePhotoStore.photoUrl(post.userId)};'
+new = 'val avatar by produceState<String?>(null,post.userId,avatarRefresh){value=runCatching{ProfilePhotoStore.photoUrl(post.userId)}.getOrNull()};'
+if old in s:
+    s = s.replace(old, new, 1)
+
+# Coil can fail while a signed/public URL is changing. Keep the avatar container and
+# fall back to the poster initial instead of leaving a blank circle.
+old = 'if(avatar!=null)AsyncImage(avatar,"${post.userName} profile photo",Modifier.fillMaxSize(),contentScale=ContentScale.Crop)else Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center){Text(post.userName.take(1).uppercase(),fontWeight=FontWeight.Bold,color=MaterialTheme.colorScheme.primary)}'
+new = 'if(avatar!=null)AsyncImage(model=avatar,contentDescription="${post.userName} profile photo",modifier=Modifier.fillMaxSize(),contentScale=ContentScale.Crop)else Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center){Text(post.userName.take(1).uppercase().ifBlank{"?"},fontWeight=FontWeight.Bold,color=MaterialTheme.colorScheme.primary)}'
+if old in s:
+    s = s.replace(old, new, 1)
+
 p.write_text(s)
