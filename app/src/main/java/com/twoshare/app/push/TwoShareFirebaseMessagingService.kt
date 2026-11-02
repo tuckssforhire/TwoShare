@@ -16,66 +16,23 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
-class TwoShareFirebaseMessagingService : FirebaseMessagingService() {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-
-    override fun onNewToken(token: String) {
-        super.onNewToken(token)
-        PushNotificationManager.ensureNotificationChannels(applicationContext)
-        scope.launch { runCatching { PushNotificationManager.registerToken(applicationContext, token) } }
-    }
-
-    override fun onMessageReceived(message: RemoteMessage) {
-        super.onMessageReceived(message)
-        val type = message.data["type"].orEmpty()
-        val isCall = type == "call" || type == "incoming_call"
-        if (!isCall && isAppInForeground()) return
-        val title = message.notification?.title ?: message.data["title"] ?: if (isCall) "Incoming TwoLink" else "TwoShare"
-        val body = message.notification?.body ?: message.data["body"] ?: if (isCall) "Your partner is calling." else "You have a new notification."
-        showNotification(title, body, isCall, message.data["call_id"])
-    }
-
-    private fun isAppInForeground(): Boolean {
-        val manager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
-        return manager.runningAppProcesses?.any {
-            it.processName == packageName && it.importance == ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND
-        } == true
-    }
-
-    private fun showNotification(title: String, body: String, isCall: Boolean, callId: String?) {
-        PushNotificationManager.ensureNotificationChannels(this)
-        val manager = getSystemService(NotificationManager::class.java)
-        val intent = Intent(this, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
-            putExtra("open_messenger", !isCall)
-            if (isCall) {
-                putExtra("incoming_call", true)
-                callId?.let { putExtra("incoming_call_id", it) }
-            }
-        }
-        val requestCode = if (isCall) 200 else 100
-        val pending = PendingIntent.getActivity(this, requestCode, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        val channel = if (isCall) PushNotificationManager.CHANNEL_CALLS else PushNotificationManager.CHANNEL_MESSAGES
-        val builder = NotificationCompat.Builder(this, channel)
-            .setSmallIcon(R.drawable.twoshare_icon)
-            .setContentTitle(title)
-            .setContentText(body)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
-            .setContentIntent(pending)
-            .setAutoCancel(!isCall)
-            .setOngoing(isCall)
-            .setPriority(NotificationCompat.PRIORITY_MAX)
-            .setCategory(if (isCall) NotificationCompat.CATEGORY_CALL else NotificationCompat.CATEGORY_MESSAGE)
-            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-
-        if (isCall) builder.setFullScreenIntent(pending, true).setTimeoutAfter(120_000)
-        val notification = builder.build().apply {
-            if (isCall) flags = flags or Notification.FLAG_INSISTENT
-        }
-        manager.notify(if (isCall) INCOMING_CALL_NOTIFICATION_ID else (System.currentTimeMillis() and 0x7fffffff).toInt(), notification)
-    }
-
-    companion object {
-        private const val INCOMING_CALL_NOTIFICATION_ID = 22001
-    }
+class TwoShareFirebaseMessagingService:FirebaseMessagingService(){
+ private val scope=CoroutineScope(SupervisorJob()+Dispatchers.IO)
+ override fun onNewToken(token:String){super.onNewToken(token);PushNotificationManager.ensureNotificationChannels(applicationContext);scope.launch{runCatching{PushNotificationManager.registerToken(applicationContext,token)}}}
+ override fun onMessageReceived(message:RemoteMessage){
+  super.onMessageReceived(message);val type=message.data["type"].orEmpty();val isCall=type=="call"||type=="incoming_call";val isCalendar=type=="calendar_reminder"
+  if(!isCall&&!isCalendar&&isAppInForeground())return
+  val title=message.notification?.title?:message.data["title"]?:when{isCall->"Incoming TwoLink";isCalendar->"Calendar reminder";else->"TwoShare"}
+  val body=message.notification?.body?:message.data["body"]?:when{isCall->"Your partner is calling.";isCalendar->"You have an upcoming shared schedule.";else->"You have a new notification."}
+  showNotification(title,body,isCall,isCalendar,message.data["call_id"],message.data["event_id"])
+ }
+ private fun isAppInForeground():Boolean{val manager=getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager;return manager.runningAppProcesses?.any{it.processName==packageName&&it.importance==ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND}==true}
+ private fun showNotification(title:String,body:String,isCall:Boolean,isCalendar:Boolean,callId:String?,eventId:String?){
+  PushNotificationManager.ensureNotificationChannels(this);val manager=getSystemService(NotificationManager::class.java)
+  val intent=Intent(this,MainActivity::class.java).apply{flags=Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP;putExtra("open_messenger",!isCall&&!isCalendar);putExtra("open_calendar",isCalendar);eventId?.let{putExtra("calendar_event_id",it)};if(isCall){putExtra("incoming_call",true);callId?.let{putExtra("incoming_call_id",it)}}}
+  val requestCode=when{isCall->200;isCalendar->300;else->100};val pending=PendingIntent.getActivity(this,requestCode,intent,PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+  val channel=when{isCall->PushNotificationManager.CHANNEL_CALLS;isCalendar->PushNotificationManager.CHANNEL_CALENDAR;else->PushNotificationManager.CHANNEL_MESSAGES}
+  val builder=NotificationCompat.Builder(this,channel).setSmallIcon(R.drawable.twoshare_icon).setContentTitle(title).setContentText(body).setStyle(NotificationCompat.BigTextStyle().bigText(body)).setContentIntent(pending).setAutoCancel(!isCall).setOngoing(isCall).setPriority(NotificationCompat.PRIORITY_MAX).setCategory(if(isCall)NotificationCompat.CATEGORY_CALL else if(isCalendar)NotificationCompat.CATEGORY_REMINDER else NotificationCompat.CATEGORY_MESSAGE).setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+  if(isCall)builder.setFullScreenIntent(pending,true).setTimeoutAfter(120_000);val notification=builder.build().apply{if(isCall)flags=flags or Notification.FLAG_INSISTENT};manager.notify(if(isCall)22001 else (System.currentTimeMillis() and 0x7fffffff).toInt(),notification)
+ }
 }
