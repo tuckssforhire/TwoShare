@@ -22,7 +22,7 @@ private data class FeedReactionInsert(
 
 class FeedReactionRepository(private val base: TwoShareRepository) {
     private val supabase = SupabaseProvider.client
-    val choices = listOf("❤️", "👍", "😂", "😍", "😮", "😢", "🔥", "🥰", "👏", "🎉")
+    val choices = listOf("❤️", "😂", "😮", "😢", "👍", "🔥")
 
     suspend fun hasNewPost(currentNewestId: String?): Boolean = runCatching {
         val newest = base.retryNetworkRead {
@@ -43,7 +43,7 @@ class FeedReactionRepository(private val base: TwoShareRepository) {
     }.getOrDefault(emptyMap())
 
     suspend fun react(postId: String, emoji: String) {
-        require(emoji in choices)
+        require(emoji.isNotBlank() && emoji.codePointCount(0, emoji.length) <= 16)
         val uid = base.currentUserId() ?: error("Session expired")
         val current = base.retryNetworkRead {
             supabase.from("likes").select {
