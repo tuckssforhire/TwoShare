@@ -26,6 +26,8 @@ class ChatFeaturesRepository(private val base:TwoShareRepository){
  private var profileCacheAt=0L
  private var cachedMessages:List<UiChatMessage> = emptyList()
 
+ fun invalidateMessagesCache(){cachedMessages=emptyList()}
+
  private suspend fun profiles():Map<String,ProfileRow>{
   val now=System.currentTimeMillis()
   if(profileCache.isNotEmpty() && now-profileCacheAt<300_000L)return profileCache
