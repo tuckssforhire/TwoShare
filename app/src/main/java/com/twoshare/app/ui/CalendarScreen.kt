@@ -3,6 +3,7 @@ package com.twoshare.app.ui
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -52,12 +53,12 @@ private val timeFmt=DateTimeFormatter.ofPattern("h:mm a")
 }
 
 @Composable private fun MonthGrid(month:YearMonth,selected:LocalDate,events:List<CalendarEvent>,pick:(LocalDate)->Unit){
- val first=month.atDay(1)
+ val first=month.atDay(1);val today=LocalDate.now(phZone)
  val sundayFirstOffset=first.dayOfWeek.value%7
  val cells=List<LocalDate?>(sundayFirstOffset){null}+(1..month.lengthOfMonth()).map{month.atDay(it)}
  Column(Modifier.fillMaxWidth().padding(horizontal=8.dp)){
   Row(Modifier.fillMaxWidth()){listOf("S","M","T","W","T","F","S").forEach{day->Box(Modifier.weight(1f).aspectRatio(1f),contentAlignment=Alignment.Center){Text(day,textAlign=TextAlign.Center,style=MaterialTheme.typography.labelSmall)}}}
-  cells.chunked(7).forEach{week->Row(Modifier.fillMaxWidth()){(week+List<LocalDate?>(7-week.size){null}).forEach{date->Box(Modifier.weight(1f).aspectRatio(1f).padding(2.dp).then(if(date!=null)Modifier.clickable{pick(date)}else Modifier),contentAlignment=Alignment.Center){if(date!=null){val has=events.any{occursOn(it,date)};if(date==selected)Surface(shape=CircleShape,color=MaterialTheme.colorScheme.primaryContainer){Box(Modifier.size(44.dp),contentAlignment=Alignment.Center){Text(date.dayOfMonth.toString(),textAlign=TextAlign.Center,fontWeight=FontWeight.Bold)}}else Text(date.dayOfMonth.toString(),textAlign=TextAlign.Center);if(has)Box(Modifier.align(Alignment.BottomCenter).padding(bottom=3.dp).size(5.dp).background(MaterialTheme.colorScheme.primary,CircleShape))}}}}
+  cells.chunked(7).forEach{week->Row(Modifier.fillMaxWidth()){(week+List<LocalDate?>(7-week.size){null}).forEach{date->Box(Modifier.weight(1f).aspectRatio(1f).padding(2.dp).then(if(date!=null)Modifier.clickable{pick(date)}else Modifier),contentAlignment=Alignment.Center){if(date!=null){val has=events.any{occursOn(it,date)};val selectedDate=date==selected;val todayDate=date==today;val circleModifier=Modifier.size(44.dp).then(if(todayDate&&!selectedDate)Modifier.border(2.dp,MaterialTheme.colorScheme.primary,CircleShape)else Modifier);if(selectedDate)Surface(shape=CircleShape,color=MaterialTheme.colorScheme.primaryContainer){Box(Modifier.size(44.dp),contentAlignment=Alignment.Center){Text(date.dayOfMonth.toString(),textAlign=TextAlign.Center,fontWeight=FontWeight.Bold)}}else Box(circleModifier,contentAlignment=Alignment.Center){Text(date.dayOfMonth.toString(),textAlign=TextAlign.Center,fontWeight=if(todayDate)FontWeight.Bold else FontWeight.Normal)};if(has)Box(Modifier.align(Alignment.BottomCenter).padding(bottom=3.dp).size(5.dp).background(MaterialTheme.colorScheme.primary,CircleShape))}}}}
  }
 }
 
