@@ -44,40 +44,33 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
-
-          # Feed: optimistic reactions, no temporary disappearance, and suppress stale-session noise.
-          p=Path('app/src/main/java/com/twoshare/app/ui/FeedScreen.kt')
-          s=p.read_text()
+          p=Path('app/src/main/java/com/twoshare/app/ui/FeedScreen.kt');s=p.read_text()
           old=' fun react(post:FeedPost,emoji:String){scope.launch{runCatching{reactionRepo.react(post.id,emoji)}.onSuccess{reactions=reactionRepo.load()}.onFailure{error=friendlyError(it,"Reaction failed.")}}}'
           new=' fun react(post:FeedPost,emoji:String){val current=repository.currentUserId()?:return;val before=reactions;val postMap=reactions[post.id].orEmpty();val mine=postMap.entries.firstOrNull{current in it.value}?.key;val updated=postMap.mapValues{(_,users)->users-current}.filterValues{it.isNotEmpty()}.toMutableMap();if(mine!=emoji)updated[emoji]=updated[emoji].orEmpty()+current;reactions=reactions.toMutableMap().apply{put(post.id,updated)};scope.launch{runCatching{reactionRepo.react(post.id,emoji)}.onFailure{t->reactions=before;val raw=t.localizedMessage.orEmpty().lowercase();if(!("session" in raw&&"expired" in raw))error=friendlyError(t,"Reaction failed.")}}}'
           if old not in s: raise SystemExit('Feed react function not found')
-          s=s.replace(old,new,1)
-          p.write_text(s)
-
-          # Repository: a momentary missing auth snapshot should not surface "Session expired" in Feed.
-          p=Path('app/src/main/java/com/twoshare/app/data/FeedReactionRepository.kt')
-          s=p.read_text()
-          old='        val uid = base.currentUserId() ?: error("Session expired")'
-          new='        val uid = base.currentUserId() ?: return'
+          p.write_text(s.replace(old,new,1))
+          p=Path('app/src/main/java/com/twoshare/app/data/FeedReactionRepository.kt');s=p.read_text();old='        val uid = base.currentUserId() ?: error("Session expired")';new='        val uid = base.currentUserId() ?: return'
           if old not in s: raise SystemExit('Feed reaction session line not found')
-          s=s.replace(old,new,1)
-          p.write_text(s)
-
-          # Messenger: capture unread boundary whenever new unread messages arrive, not only on first load.
-          p=Path('app/src/main/java/com/twoshare/app/ui/MessengerScreenV2.kt')
-          s=p.read_text()
-          old='if(!initialUnreadCaptured){unreadDividerId=server.firstOrNull{it.senderId!=uid&&it.readAt==null}?.id;initialUnreadCaptured=true}'
-          new='if(unreadDividerId==null){unreadDividerId=server.firstOrNull{it.senderId!=uid&&it.readAt==null}?.id};initialUnreadCaptured=true'
+          p.write_text(s.replace(old,new,1))
+          p=Path('app/src/main/java/com/twoshare/app/ui/MessengerScreenV2.kt');s=p.read_text()
+          old='if(!initialUnreadCaptured){unreadDividerId=server.firstOrNull{it.senderId!=uid&&it.readAt==null}?.id;initialUnreadCaptured=true}';new='if(unreadDividerId==null){unreadDividerId=server.firstOrNull{it.senderId!=uid&&it.readAt==null}?.id};initialUnreadCaptured=true'
           if old not in s: raise SystemExit('Unread capture logic not found')
           s=s.replace(old,new,1)
-          # Smoothly settle at the newest message when the user is already near the bottom.
-          old='var initialScrollDone by remember{mutableStateOf(false)}'
-          new='var initialScrollDone by remember{mutableStateOf(false)};var previousTimelineSize by remember{mutableIntStateOf(0)}'
+          old='var initialScrollDone by remember{mutableStateOf(false)}';new='var initialScrollDone by remember{mutableStateOf(false)};var previousTimelineSize by remember{mutableIntStateOf(0)}'
           if old not in s: raise SystemExit('Initial scroll state not found')
           s=s.replace(old,new,1)
           old='LaunchedEffect(timeline.size){if(!initialScrollDone&&timeline.isNotEmpty()){delay(100);val count=listState.layoutInfo.totalItemsCount;if(count>0){runCatching{listState.scrollToItem(timeline.lastIndex.coerceAtMost(count-1))};initialScrollDone=true}}}'
-          new='LaunchedEffect(timeline.size){if(!initialScrollDone&&timeline.isNotEmpty()){delay(100);val count=listState.layoutInfo.totalItemsCount;if(count>0){runCatching{listState.scrollToItem(timeline.lastIndex.coerceAtMost(count-1))};initialScrollDone=true}}else if(initialScrollDone&&timeline.size>previousTimelineSize&&listState.firstVisibleItemIndex>=(previousTimelineSize-8).coerceAtLeast(0)){delay(60);runCatching{listState.animateScrollToItem(timeline.lastIndex)}};previousTimelineSize=timeline.size}'
+          new='LaunchedEffect(timeline.size){if(!initialScrollDone&&timeline.isNotEmpty()){delay(100);val count=listState.layoutInfo.totalItemsCount;if(count>0){runCatching{listState.scrollToItem(timeline.lastIndex.coerceAtMost(count-1))};initialScrollDone=true}}else if(initialScrollDone&&timeline.size>previousTimelineSize&&listState.firstVisibleItemIndex>=(previousTimelineSize-8).coerceAtLeast(0)){delay(80);runCatching{listState.animateScrollToItem(timeline.lastIndex)}};previousTimelineSize=timeline.size}'
           if old not in s: raise SystemExit('Timeline scroll effect not found')
+          s=s.replace(old,new,1)
+          # Animate each LazyColumn row so a newly received message expands into the bottom and pushes existing messages upward instead of snapping.
+          old='itemsIndexed(timeline,key={_,entry->when(val item=entry.second){is UiChatMessage->"m-${item.id}";is CallRow->"c-${item.id}";else->entry.first.toString()}}){_,entry->val item=entry.second;'
+          new='itemsIndexed(timeline,key={_,entry->when(val item=entry.second){is UiChatMessage->"m-${item.id}";is CallRow->"c-${item.id}";else->entry.first.toString()}}){_,entry->Box(Modifier.animateItem(fadeInSpec=androidx.compose.animation.core.tween(220),placementSpec=androidx.compose.animation.core.tween(320),fadeOutSpec=androidx.compose.animation.core.tween(160))){val item=entry.second;'
+          if old not in s: raise SystemExit('Timeline items block not found')
+          s=s.replace(old,new,1)
+          old='}else CallLine(item as CallRow,uid)}}}}\n}'
+          new='}else CallLine(item as CallRow,uid)}}}}}\n}'
+          if old not in s: raise SystemExit('Timeline items close not found')
           s=s.replace(old,new,1)
           p.write_text(s)
           PY
@@ -117,10 +110,8 @@ jobs:
                       x+=.20*env*(math.sin(2*math.pi*f*dt)+.20*math.sin(4*math.pi*f*dt))
               phase=t%(60/92)
               if phase<.07: x+=.018*math.exp(-45*phase)*random.uniform(-1,1)
-              x*=max(0,min(1,t/.08,(duration-t)/.25)); x=max(-.95,min(.95,x))
-              frames+=struct.pack('<h',int(x*32767))
-          with wave.open(path,'wb') as w:
-              w.setnchannels(1); w.setsampwidth(2); w.setframerate(sr); w.writeframes(frames)
+              x*=max(0,min(1,t/.08,(duration-t)/.25)); x=max(-.95,min(.95,x)); frames+=struct.pack('<h',int(x*32767))
+          with wave.open(path,'wb') as w:w.setnchannels(1);w.setsampwidth(2);w.setframerate(sr);w.writeframes(frames)
           PY
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
