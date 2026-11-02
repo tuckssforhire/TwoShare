@@ -13,6 +13,32 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Add Messenger last-seen profile badge
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('app/src/main/java/com/twoshare/app/ui/MessengerScreenV2.kt')
+          s=p.read_text()
+          s=s.replace(' val partnerStatus=remember(partner?.lastActiveAt,presenceTick){if(presence.label(partner?.lastActiveAt)=="Online")"Online" else "Offline"}\n', ' val partnerStatus=remember(partner?.lastActiveAt,presenceTick){if(presence.label(partner?.lastActiveAt)=="Online")"Online" else "Offline"}\n val lastSeenMessageId=remember(messages,uid){messages.lastOrNull{it.senderId==uid&&it.readAt!=null}?.id}\n', 1)
+          old='MessageRow(item,uid,avatar,{replying=item;editing=null},{editing=item;replying=null;draft=item.body.orEmpty()},{e->react(item,e)},{failed->messages=messages.filterNot{it.id==failed.id};draft=failed.body.orEmpty()},{jumpTo(item.replyToId)})'
+          new='MessageRow(item,uid,avatar,{replying=item;editing=null},{editing=item;replying=null;draft=item.body.orEmpty()},{e->react(item,e)},{failed->messages=messages.filterNot{it.id==failed.id};draft=failed.body.orEmpty()},{jumpTo(item.replyToId)},item.id==lastSeenMessageId,partnerPhoto)'
+          if old not in s: raise SystemExit('MessageRow call not found')
+          s=s.replace(old,new,1)
+          old='@Composable private fun MessageRow(message:UiChatMessage,uid:String?,avatar:String?,reply:()->Unit,edit:()->Unit,react:(String)->Unit,retry:(UiChatMessage)->Unit,jumpToReply:()->Unit)'
+          new='@Composable private fun MessageRow(message:UiChatMessage,uid:String?,avatar:String?,reply:()->Unit,edit:()->Unit,react:(String)->Unit,retry:(UiChatMessage)->Unit,jumpToReply:()->Unit,showSeenBadge:Boolean,seenPhoto:String?)'
+          if old not in s: raise SystemExit('MessageRow signature not found')
+          s=s.replace(old,new,1)
+          marker='@OptIn(ExperimentalFoundationApi::class)\n@Composable private fun MessageRow'
+          helper='@Composable private fun SeenBadge(photo:String?){Surface(Modifier.size(18.dp),shape=CircleShape,color=MaterialTheme.colorScheme.secondaryContainer,border=BorderStroke(1.dp,MaterialTheme.colorScheme.surface)){if(photo!=null)AsyncImage(photo,"Seen by partner",Modifier.fillMaxSize(),contentScale=ContentScale.Crop)else Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center){Text("✓",fontSize=10.sp)}}}\n@OptIn(ExperimentalFoundationApi::class)\n@Composable private fun MessageRow'
+          if marker not in s: raise SystemExit('MessageRow marker not found')
+          s=s.replace(marker,helper,1)
+          old='if(showTime||message.localState!="sent")Text((if(showTime)absoluteTime(message.createdAt)else "")+if(mine){if(showTime)" · $receipt" else receipt}else "",style=MaterialTheme.typography.labelSmall);if(message.localState=="failed")'
+          new='if(showTime||message.localState!="sent"||showSeenBadge)Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(4.dp)){val receiptText=(if(showTime)absoluteTime(message.createdAt)else "")+if(mine){if(showTime)" · $receipt" else if(showSeenBadge)"Seen" else receipt}else "";if(receiptText.isNotBlank())Text(receiptText,style=MaterialTheme.typography.labelSmall);if(mine&&showSeenBadge)SeenBadge(seenPhoto)};if(message.localState=="failed")'
+          if old not in s: raise SystemExit('Receipt line not found')
+          s=s.replace(old,new,1)
+          p.write_text(s)
+          PY
       - name: Set up Java 17
         uses: actions/setup-java@v5
         with:
@@ -85,6 +111,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: TwoShare-v1.0.21-release-apk
+          name: TwoShare-v1.0.22-release-apk
           path: app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
