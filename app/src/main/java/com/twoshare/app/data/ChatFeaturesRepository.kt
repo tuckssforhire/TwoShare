@@ -39,10 +39,6 @@ class ChatFeaturesRepository(private val base:TwoShareRepository){
  suspend fun loadMessages(pageSize:Int=60):List<UiChatMessage>{
   return try{
    check(base.currentUserId()!=null){"Your session has expired. Please sign in again."}
-   if(cachedMessages.isNotEmpty() && pageSize<=cachedMessages.size){
-    val newest=runCatching{base.retryNetworkRead{supabase.from("messages").select{order("created_at",Order.DESCENDING);limit(1)}.decodeList<ChatMessageRow>().firstOrNull()?.id}}.getOrNull()
-    if(newest!=null && newest==cachedMessages.lastOrNull()?.id)return cachedMessages.takeLast(pageSize)
-   }
    val rows=base.retryNetworkRead{supabase.from("messages").select{order("created_at",Order.DESCENDING);limit(pageSize.toLong())}.decodeList<ChatMessageRow>()}.asReversed()
    val profiles=profiles()
    val ids=rows.map{it.id}.toSet()
