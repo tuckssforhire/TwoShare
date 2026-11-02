@@ -8,10 +8,14 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.twoshare.app.BuildConfig
 
 data class VersionNote(val version:String,val items:List<String>)
 
 val twoShareVersionHistory=listOf(
+ VersionNote("1.0.25",listOf("Messenger reaction picker is scrollable","Expanded Unicode emoji reactions are accepted by Messenger","Reaction handling no longer depends on the original six-emoji restriction","What's New now follows the installed app version")),
+ VersionNote("1.0.24",listOf("Expanded Messenger reaction picker","Messenger reaction and update stability improvements","Startup update/version handling improvements")),
+ VersionNote("1.0.23",listOf("Partner profile badge for seen messages","More reaction picker in Messenger","Smoother message appearance and feed reaction updates")),
  VersionNote("1.0.18",listOf("Profile display photo in Account & settings","Tap a quoted reply to scroll back to the original message","Messenger keeps cached messages visible while reconnecting")),
  VersionNote("1.0.17",listOf("Offline-friendly feed: keeps the latest 3 posts ready","Messenger keeps the latest 20 messages ready","Connecting / Online status and automatic refresh after reconnection","Version progress history and What's new after updates")),
  VersionNote("1.0.16",listOf("Large emoji-only messages","Gallery and camera photos in Messenger","Camera photo posting in the feed")),
@@ -21,9 +25,11 @@ val twoShareVersionHistory=listOf(
  VersionNote("Earlier builds",listOf("Private two-person feed and Messenger","Photo sharing, comments and reactions","Voice/video TwoLink calls","Push notifications and trusted-device sign-in"))
 )
 
+private fun currentVersionNote():VersionNote=twoShareVersionHistory.firstOrNull{it.version==BuildConfig.VERSION_NAME}?:VersionNote(BuildConfig.VERSION_NAME,listOf("TwoShare has been updated with the latest fixes and improvements."))
+
 fun shouldShowWhatsNew(context:Context,versionCode:Int):Boolean=context.getSharedPreferences("twoshare_progress",0).getInt("whats_new_seen",0)<versionCode
 fun markWhatsNewSeen(context:Context,versionCode:Int){context.getSharedPreferences("twoshare_progress",0).edit().putInt("whats_new_seen",versionCode).apply()}
 
 @Composable fun VersionHistoryDialog(onDismiss:()->Unit){AlertDialog(onDismissRequest=onDismiss,title={Text("TwoShare progress")},text={Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(12.dp)){twoShareVersionHistory.forEach{note->Column{Text("Version ${note.version}",style=MaterialTheme.typography.titleMedium,color=MaterialTheme.colorScheme.primary);note.items.forEach{Text("• $it",style=MaterialTheme.typography.bodyMedium)}}}}},confirmButton={TextButton(onClick=onDismiss){Text("Done")}})}
 
-@Composable fun WhatsNewDialog(onDismiss:()->Unit){val current=twoShareVersionHistory.first();AlertDialog(onDismissRequest=onDismiss,title={Text("What's new in TwoShare ${current.version}")},text={Column(verticalArrangement=Arrangement.spacedBy(8.dp)){current.items.forEach{Text("• $it")};Spacer(Modifier.height(4.dp));Text("You can review the full app progress anytime in Account & settings.",style=MaterialTheme.typography.bodySmall)}},confirmButton={Button(onClick=onDismiss){Text("Got it")}})}
+@Composable fun WhatsNewDialog(onDismiss:()->Unit){val current=currentVersionNote();AlertDialog(onDismissRequest=onDismiss,title={Text("What's new in TwoShare ${current.version}")},text={Column(verticalArrangement=Arrangement.spacedBy(8.dp)){current.items.forEach{Text("• $it")};Spacer(Modifier.height(4.dp));Text("You can review the full app progress anytime in Account & settings.",style=MaterialTheme.typography.bodySmall)}},confirmButton={Button(onClick=onDismiss){Text("Got it")}})}
