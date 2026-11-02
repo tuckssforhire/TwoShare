@@ -31,6 +31,9 @@ tasks.configureEach {
             if (!messengerText.contains("androidx.compose.foundation.lazy.grid.*")) {
                 messengerText = messengerText.replace("import androidx.compose.foundation.lazy.*", "import androidx.compose.foundation.lazy.*\nimport androidx.compose.foundation.lazy.grid.*")
             }
+            if (!messengerText.contains("import androidx.compose.ui.platform.LocalDensity")) {
+                messengerText = messengerText.replace("import androidx.compose.ui.platform.LocalContext", "import androidx.compose.ui.platform.LocalContext\nimport androidx.compose.ui.platform.LocalDensity")
+            }
             messengerText = messengerText.replace("\n }\n if(heartBurst>0)key(heartBurst){FloatingThinkingHeart()}", "\n if(heartBurst>0)key(heartBurst){FloatingThinkingHeart()}")
             messengerText = messengerText.replace("bottomBar={Surface(shadowElevation=6.dp){", "bottomBar={Surface(shadowElevation=6.dp){")
             messengerText = messengerText.replace("var themePicker by remember{mutableStateOf(false)}", "var themePicker by remember{mutableStateOf(false)};var templatePicker by remember{mutableStateOf(false)};var templates by remember{mutableStateOf(chatPrefs.getString(\"templates\",\"\").orEmpty().split(\"|||TS|||\").filter{it.isNotBlank()})}")
