@@ -26,7 +26,6 @@ tasks.configureEach {
             text = text.replace("        require(emoji in allowedReactions)", "        require(emoji.isNotBlank() && emoji.codePointCount(0, emoji.length) <= 16)")
             repo.writeText(text)
 
-            // Keep the reaction-picker source buildable while preserving the v1.0.29 Messenger baseline behavior.
             val messenger = file("src/main/java/com/twoshare/app/ui/MessengerScreenV2.kt")
             var messengerText = messenger.readText()
             if (!messengerText.contains("androidx.compose.foundation.lazy.grid.*")) {
@@ -41,7 +40,6 @@ tasks.configureEach {
             )
             messenger.writeText(messengerText)
 
-            // Feed: show comment previews directly on posts and use an explicit reaction picker button.
             val feed = file("src/main/java/com/twoshare/app/ui/FeedScreen.kt")
             var feedText = feed.readText()
             feedText = feedText.replace(
@@ -59,6 +57,10 @@ tasks.configureEach {
             feedText = feedText.replace(
                 "Box{TextButton(onClick={onReact(mine?:\"❤️\")},modifier=Modifier.combinedClickable(onClick={onReact(mine?:\"❤️\")},onLongClick={reactionMenu=true})){Text(mine?:\"♡\");Spacer(Modifier.width(6.dp));Text(if(total==0)\"React\" else total.toString())};DropdownMenu(reactionMenu,{reactionMenu=false}){Row(Modifier.padding(horizontal=8.dp,vertical=6.dp),horizontalArrangement=Arrangement.spacedBy(4.dp)){choices.forEach{emoji->Text(emoji,style=MaterialTheme.typography.headlineSmall,modifier=Modifier.clickable{reactionMenu=false;onReact(emoji)}.padding(5.dp))}}}}",
                 "FeedReactionButton(mine,total,choices,onReact)"
+            )
+            feedText = feedText.replace(
+                "TextButton(onClick=onComments){Text(\"Comment\")}",
+                "TextButton(onClick={FeedCommentExpansion.toggle(post.id)}){Text(\"Comment\")}"
             )
             feed.writeText(feedText)
         }
