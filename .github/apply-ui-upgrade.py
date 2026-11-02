@@ -1,0 +1,39 @@
+from pathlib import Path
+
+p=Path('app/build.gradle.kts'); s=p.read_text(); s=s.replace('versionCode = 51; versionName = "1.0.27"','versionCode = 52; versionName = "1.0.28"'); p.write_text(s)
+
+p=Path('app/src/main/AndroidManifest.xml'); s=p.read_text()
+if 'android.permission.REQUEST_INSTALL_PACKAGES' not in s:
+    s=s.replace('<uses-permission android:name="android.permission.INTERNET" />','<uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />')
+s=s.replace('android:name=".MainActivity" android:exported="true" android:showWhenLocked="true" android:turnScreenOn="true"','android:name=".MainActivity" android:exported="true" android:showWhenLocked="true" android:turnScreenOn="true" android:windowSoftInputMode="adjustResize"')
+p.write_text(s)
+
+p=Path('app/src/main/java/com/twoshare/app/MainActivity.kt'); s=p.read_text()
+s=s.replace('runCatching{startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(availableUpdate.downloadUrl)))};updateInfo=null','runCatching{downloadAndInstallUpdate(this@MainActivity,availableUpdate.downloadUrl,availableUpdate.latestVersionName)};updateInfo=null')
+s=s.replace('Download the latest version here.','TwoShare will download the update and open the Android installer.').replace('Text("Download latest version")','Text("Update now")')
+p.write_text(s)
+
+p=Path('app/src/main/java/com/twoshare/app/ui/MessengerScreenV2.kt'); s=p.read_text()
+s=s.replace('private val reactionChoices=listOf("❤️","😂","😮","😢","👍","🔥")','private val reactionChoices=listOf("❤️","🥰","😘","😂","😮","😢","👍","🔥")')
+old='actions={FilledTonalIconButton(onClick={scope.launch{runCatching{repository.createOutgoingCall(false)}'
+new='actions={FilledTonalIconButton(onClick={draft="❤️ Thinking of you";send()}){Icon(Icons.Default.Favorite,"Thinking of you")};Spacer(Modifier.width(5.dp));FilledTonalIconButton(onClick={scope.launch{runCatching{repository.createOutgoingCall(false)}'
+if old in s: s=s.replace(old,new,1)
+p.write_text(s)
+
+p=Path('app/src/main/java/com/twoshare/app/ui/FeedScreen.kt'); s=p.read_text()
+old='){padding->Column(Modifier.fillMaxSize().padding(padding)){error?.let{Text(it,Modifier.padding(horizontal=16.dp,vertical=8.dp),color=MaterialTheme.colorScheme.error)};when{'
+new='){padding->Column(Modifier.fillMaxSize().padding(padding)){Card(Modifier.fillMaxWidth().padding(horizontal=12.dp,vertical=10.dp),shape=RoundedCornerShape(22.dp),colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.primaryContainer.copy(alpha=.55f))){Column(Modifier.padding(16.dp)){Text("Just us ❤️",style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.Bold);Text("Our private place for messages, memories and the moments we keep together.",style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)}};error?.let{Text(it,Modifier.padding(horizontal=16.dp,vertical=8.dp),color=MaterialTheme.colorScheme.error)};when{'
+if old in s: s=s.replace(old,new,1)
+p.write_text(s)
+
+Path('app/src/main/java/com/twoshare/app/AppUpdateInstaller.kt').write_text('''package com.twoshare.app
+import android.app.DownloadManager
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.net.Uri
+import android.os.Environment
+import androidx.core.content.ContextCompat
+fun downloadAndInstallUpdate(context:Context,url:String,version:String){val manager=context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager;val request=DownloadManager.Request(Uri.parse(url)).setTitle("TwoShare $version").setDescription("Downloading TwoShare update…").setMimeType("application/vnd.android.package-archive").setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED).setDestinationInExternalFilesDir(context,Environment.DIRECTORY_DOWNLOADS,"TwoShare-$version.apk");val id=manager.enqueue(request);val receiver=object:BroadcastReceiver(){override fun onReceive(c:Context,intent:Intent){if(intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID,-1L)!=id)return;runCatching{val apk=manager.getUriForDownloadedFile(id)?:return@runCatching;c.startActivity(Intent(Intent.ACTION_VIEW).apply{setDataAndType(apk,"application/vnd.android.package-archive");addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)})};runCatching{c.unregisterReceiver(this)}}};ContextCompat.registerReceiver(context,receiver,IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE),ContextCompat.RECEIVER_EXPORTED)}
+''')
