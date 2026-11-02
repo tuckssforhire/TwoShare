@@ -25,6 +25,21 @@ tasks.configureEach {
             var text = repo.readText()
             text = text.replace("        require(emoji in allowedReactions)", "        require(emoji.isNotBlank() && emoji.codePointCount(0, emoji.length) <= 16)")
             repo.writeText(text)
+
+            // Keep the reaction-picker source buildable while preserving the v1.0.29 Messenger baseline behavior.
+            val messenger = file("src/main/java/com/twoshare/app/ui/MessengerScreenV2.kt")
+            var messengerText = messenger.readText()
+            if (!messengerText.contains("androidx.compose.foundation.lazy.grid.*")) {
+                messengerText = messengerText.replace(
+                    "import androidx.compose.foundation.lazy.*",
+                    "import androidx.compose.foundation.lazy.*\nimport androidx.compose.foundation.lazy.grid.*"
+                )
+            }
+            messengerText = messengerText.replace(
+                "\n }\n if(heartBurst>0)key(heartBurst){FloatingThinkingHeart()}",
+                "\n if(heartBurst>0)key(heartBurst){FloatingThinkingHeart()}"
+            )
+            messenger.writeText(messengerText)
         }
     }
 }
