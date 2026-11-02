@@ -20,6 +20,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.twoshare.app.data.CalendarEvent
 import com.twoshare.app.data.CalendarRepository
@@ -51,8 +52,12 @@ private val timeFmt=DateTimeFormatter.ofPattern("h:mm a")
 }
 
 @Composable private fun MonthGrid(month:YearMonth,selected:LocalDate,events:List<CalendarEvent>,pick:(LocalDate)->Unit){
- val first=month.atDay(1);val offset=first.dayOfWeek.value%7;val cells=List<LocalDate?>(offset){null}+(1..month.lengthOfMonth()).map{month.atDay(it)}
- Column(Modifier.padding(horizontal=8.dp)){Row(Modifier.fillMaxWidth()){listOf("S","M","T","W","T","F","S").forEach{Text(it,Modifier.weight(1f).padding(5.dp),style=MaterialTheme.typography.labelSmall)}};cells.chunked(7).forEach{week->Row(Modifier.fillMaxWidth()){(week+List<LocalDate?>(7-week.size){null}).forEach{date->Box(Modifier.weight(1f).aspectRatio(1f).padding(2.dp).then(if(date!=null)Modifier.clickable{pick(date)}else Modifier),contentAlignment=Alignment.Center){if(date!=null){val has=events.any{occursOn(it,date)};if(date==selected)Surface(shape=CircleShape,color=MaterialTheme.colorScheme.primaryContainer){Text(date.dayOfMonth.toString(),Modifier.padding(10.dp),fontWeight=FontWeight.Bold)}else Text(date.dayOfMonth.toString());if(has)Box(Modifier.align(Alignment.BottomCenter).padding(bottom=3.dp).size(5.dp).background(MaterialTheme.colorScheme.primary,CircleShape))}}}}}
+ val first=month.atDay(1)
+ val sundayFirstOffset=first.dayOfWeek.value%7
+ val cells=List<LocalDate?>(sundayFirstOffset){null}+(1..month.lengthOfMonth()).map{month.atDay(it)}
+ Column(Modifier.fillMaxWidth().padding(horizontal=8.dp)){
+  Row(Modifier.fillMaxWidth()){listOf("S","M","T","W","T","F","S").forEach{day->Box(Modifier.weight(1f).aspectRatio(1f),contentAlignment=Alignment.Center){Text(day,textAlign=TextAlign.Center,style=MaterialTheme.typography.labelSmall)}}}
+  cells.chunked(7).forEach{week->Row(Modifier.fillMaxWidth()){(week+List<LocalDate?>(7-week.size){null}).forEach{date->Box(Modifier.weight(1f).aspectRatio(1f).padding(2.dp).then(if(date!=null)Modifier.clickable{pick(date)}else Modifier),contentAlignment=Alignment.Center){if(date!=null){val has=events.any{occursOn(it,date)};if(date==selected)Surface(shape=CircleShape,color=MaterialTheme.colorScheme.primaryContainer){Box(Modifier.size(44.dp),contentAlignment=Alignment.Center){Text(date.dayOfMonth.toString(),textAlign=TextAlign.Center,fontWeight=FontWeight.Bold)}}else Text(date.dayOfMonth.toString(),textAlign=TextAlign.Center);if(has)Box(Modifier.align(Alignment.BottomCenter).padding(bottom=3.dp).size(5.dp).background(MaterialTheme.colorScheme.primary,CircleShape))}}}}
  }
 }
 
