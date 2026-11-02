@@ -13,6 +13,7 @@ import com.twoshare.app.BuildConfig
 data class VersionNote(val version:String,val items:List<String>)
 
 val twoShareVersionHistory=listOf(
+ VersionNote("1.0.26",listOf("New shared Calendar & Schedule for both TwoShare users","Month and Agenda views with upcoming schedules","Create, edit and delete shared events with notes and categories","All-day and repeating schedules with reminder settings","Messenger reactions stay synchronized without requiring a relogin")),
  VersionNote("1.0.25",listOf("Messenger reaction picker is scrollable","Expanded Unicode emoji reactions are accepted by Messenger","Reaction handling no longer depends on the original six-emoji restriction","What's New now follows the installed app version")),
  VersionNote("1.0.24",listOf("Expanded Messenger reaction picker","Messenger reaction and update stability improvements","Startup update/version handling improvements")),
  VersionNote("1.0.23",listOf("Partner profile badge for seen messages","More reaction picker in Messenger","Smoother message appearance and feed reaction updates")),
