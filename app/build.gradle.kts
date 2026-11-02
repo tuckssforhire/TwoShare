@@ -41,20 +41,24 @@ tasks.configureEach {
             )
             messenger.writeText(messengerText)
 
-            // Give Feed posts the same quick reactions + expanded emoji picker as Messenger.
+            // Feed: show comment previews directly on posts and use an explicit reaction picker button.
             val feed = file("src/main/java/com/twoshare/app/ui/FeedScreen.kt")
             var feedText = feed.readText()
             feedText = feedText.replace(
-                "var reactionMenu by remember(post.id){mutableStateOf(false)};val mine=",
-                "var reactionMenu by remember(post.id){mutableStateOf(false)};var moreReactions by remember(post.id){mutableStateOf(false)};val mine="
+                "PostCard(post,repository.currentUserId(),avatarRefresh",
+                "PostCard(post,repository,repository.currentUserId(),avatarRefresh"
             )
             feedText = feedText.replace(
-                "choices.forEach{emoji->Text(emoji,style=MaterialTheme.typography.headlineSmall,modifier=Modifier.clickable{reactionMenu=false;onReact(emoji)}.padding(5.dp))}",
-                "choices.forEach{emoji->Text(emoji,style=MaterialTheme.typography.headlineSmall,modifier=Modifier.clickable{reactionMenu=false;onReact(emoji)}.padding(5.dp))};Text(\"＋\",style=MaterialTheme.typography.headlineSmall,modifier=Modifier.clickable{reactionMenu=false;moreReactions=true}.padding(5.dp))"
+                "PostCard(post:FeedPost,currentUid:String?",
+                "PostCard(post:FeedPost,repository:TwoShareRepository,currentUid:String?"
             )
             feedText = feedText.replace(
-                "}}}};TextButton(onClick=onComments){Text(\"Comment\")}",
-                "}}};if(moreReactions)FeedEmojiPickerDialog({moreReactions=false}){emoji->moreReactions=false;onReact(emoji)}};TextButton(onClick=onComments){Text(\"Comment\")}"
+                "if(reactions.isNotEmpty())Text(reactions.entries.joinToString(\"  \"){\"${'$'}{it.key} ${'$'}{it.value.size}\"},Modifier.padding(horizontal=14.dp,vertical=5.dp),style=MaterialTheme.typography.labelMedium);HorizontalDivider",
+                "if(reactions.isNotEmpty())Text(reactions.entries.joinToString(\"  \"){\"${'$'}{it.key} ${'$'}{it.value.size}\"},Modifier.padding(horizontal=14.dp,vertical=5.dp),style=MaterialTheme.typography.labelMedium);FeedCommentPreview(post,repository,onComments);HorizontalDivider"
+            )
+            feedText = feedText.replace(
+                "Box{TextButton(onClick={onReact(mine?:\"❤️\")},modifier=Modifier.combinedClickable(onClick={onReact(mine?:\"❤️\")},onLongClick={reactionMenu=true})){Text(mine?:\"♡\");Spacer(Modifier.width(6.dp));Text(if(total==0)\"React\" else total.toString())};DropdownMenu(reactionMenu,{reactionMenu=false}){Row(Modifier.padding(horizontal=8.dp,vertical=6.dp),horizontalArrangement=Arrangement.spacedBy(4.dp)){choices.forEach{emoji->Text(emoji,style=MaterialTheme.typography.headlineSmall,modifier=Modifier.clickable{reactionMenu=false;onReact(emoji)}.padding(5.dp))}}}}",
+                "FeedReactionButton(mine,total,choices,onReact)"
             )
             feed.writeText(feedText)
         }
