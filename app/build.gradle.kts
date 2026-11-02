@@ -32,6 +32,7 @@ tasks.configureEach {
                 messengerText = messengerText.replace("import androidx.compose.foundation.lazy.*", "import androidx.compose.foundation.lazy.*\nimport androidx.compose.foundation.lazy.grid.*")
             }
             messengerText = messengerText.replace("\n }\n if(heartBurst>0)key(heartBurst){FloatingThinkingHeart()}", "\n if(heartBurst>0)key(heartBurst){FloatingThinkingHeart()}")
+            messengerText = messengerText.replace("bottomBar={Surface(shadowElevation=6.dp){", "bottomBar={Surface(modifier=Modifier.imePadding(),shadowElevation=6.dp){")
             messenger.writeText(messengerText)
 
             val feed = file("src/main/java/com/twoshare/app/ui/FeedScreen.kt")
