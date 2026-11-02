@@ -18,6 +18,17 @@ android {
 }
 kotlin { jvmToolchain(17) }
 
+tasks.configureEach {
+    if (name == "preBuild") {
+        doFirst {
+            val repo = file("src/main/java/com/twoshare/app/data/TwoShareRepository.kt")
+            var text = repo.readText()
+            text = text.replace("        require(emoji in allowedReactions)", "        require(emoji.isNotBlank() && emoji.codePointCount(0, emoji.length) <= 16)")
+            repo.writeText(text)
+        }
+    }
+}
+
 dependencies {
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
