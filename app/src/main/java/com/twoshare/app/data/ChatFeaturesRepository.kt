@@ -46,7 +46,9 @@ class ChatFeaturesRepository(private val base:TwoShareRepository){
    val edits=if(ids.isEmpty()) emptyMap() else runCatching{base.retryNetworkRead{supabase.from("message_edits").select{order("edited_at",Order.ASCENDING)}.decodeList<EditRow>().filter{it.messageId in ids}.groupBy{it.messageId}}}.getOrDefault(emptyMap())
    val byId=rows.associateBy{it.id};val bucket=supabase.storage.from("twoshare")
    val result=rows.mapNotNull{row->runCatching{val mediaUrl=row.mediaPath?.let{path->urlCache[path]?:runCatching{base.retryNetworkRead{bucket.createSignedUrl(path,24.hours)}}.getOrNull()?.also{urlCache[path]=it}};val reply=row.replyToId?.let(byId::get);UiChatMessage(row.id,row.senderId,profiles[row.senderId]?.displayName?:if(row.senderId==base.currentUserId())"You" else "User",row.body,row.mediaType,mediaUrl,row.createdAt,row.readAt,reactions[row.id].orEmpty().groupBy{it.emoji}.mapValues{e->e.value.map{it.userId}.toSet()},row.clientId,row.replyToId,reply?.body?.take(120)?:if(reply?.mediaType!=null)"${reply.mediaType} attachment" else null,row.editedAt,row.deliveredAt,edits[row.id].orEmpty().map{MessageEditVersion(it.oldBody.orEmpty(),it.editedAt)},"sent")}.getOrNull()}
-   cachedMessages=result;OfflineCache.saveMessages(result);ConnectionStatus.online();result
+   val previousById=cachedMessages.associateBy{it.id}
+   val stable=result.map{fresh->previousById[fresh.id]?.takeIf{it==fresh}?:fresh}
+   cachedMessages=stable;OfflineCache.saveMessages(stable);ConnectionStatus.online();stable
   }catch(t:Throwable){if(base.isTransientNetworkError(t)){ConnectionStatus.connecting();cachedMessages.ifEmpty{OfflineCache.loadMessages().takeLast(pageSize)}}else throw t}
  }
 
