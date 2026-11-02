@@ -13,6 +13,19 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Remove chat presence subtitle
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('app/src/main/java/com/twoshare/app/ui/MessengerScreenV2.kt')
+          s=p.read_text()
+          old='title={Column{Text(partner?.displayName?:"TwoShare",style=MaterialTheme.typography.titleLarge);Text(partnerStatus,style=MaterialTheme.typography.labelSmall,color=if(partnerStatus=="Online")MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)}}'
+          new='title={Text(partner?.displayName?:"TwoShare",style=MaterialTheme.typography.titleLarge,maxLines=1)}'
+          if old not in s:
+              raise SystemExit('Expected Messenger header was not found')
+          p.write_text(s.replace(old,new,1))
+          PY
       - name: Set up Java 17
         uses: actions/setup-java@v5
         with:
