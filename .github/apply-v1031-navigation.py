@@ -17,19 +17,27 @@ main.write_text(s)
 feed = Path('app/src/main/java/com/twoshare/app/ui/FeedScreen.kt')
 s = feed.read_text()
 s = s.replace('import androidx.compose.material.icons.filled.AddPhotoAlternate\n', 'import androidx.compose.material.icons.filled.Add\nimport androidx.compose.material.icons.filled.AddPhotoAlternate\n')
-s = s.replace('var menuOpen by remember{mutableStateOf(false)};', 'var menuOpen by remember{mutableStateOf(false)};var addMenuOpen by remember{mutableStateOf(false)};')
+s = s.replace('var menuOpen by remember{mutableStateOf(false)};', 'var menuOpen by remember{mutableStateOf(false)};var addMenuOpen by remember{mutableStateOf(false)};var pendingCameraUri by remember{mutableStateOf<Uri?>(null)};')
 
-# Camera return stability: never let MediaStore/bitmap persistence exceptions crash Compose
-# when the external camera activity hands control back to Feed.
+# Full-resolution camera capture. TakePicturePreview only returns a small thumbnail,
+# which is why camera posts looked soft/pixelated. TakePicture writes the camera's
+# full image to a MediaStore Uri instead.
 old_camera = 'val camera=rememberLauncherForActivityResult(ActivityResultContracts.TakePicturePreview()){bitmap->if(bitmap!=null){val uri=savePostCameraBitmap(context,bitmap);if(uri!=null){composerError=null;pendingUploadUris=listOf(uri)}else composerError="Unable to save camera photo."}}'
-new_camera = '''val camera=rememberLauncherForActivityResult(ActivityResultContracts.TakePicturePreview()){bitmap->
-  if(bitmap!=null){
-   runCatching{savePostCameraBitmap(context,bitmap)}.onSuccess{uri->if(uri!=null){composerError=null;pendingUploadUris=listOf(uri)}else composerError="Unable to save camera photo."}.onFailure{composerError=friendlyError(it,"Unable to save camera photo.")}
-  }
+new_camera = '''val camera=rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()){saved->
+  val uri=pendingCameraUri
+  if(saved&&uri!=null){composerError=null;pendingUploadUris=listOf(uri)}else{uri?.let{runCatching{context.contentResolver.delete(it,null,null)}};composerError=if(saved)"Unable to save camera photo." else null}
+  pendingCameraUri=null
  }'''
 if old_camera not in s:
     raise SystemExit('Camera callback anchor not found')
 s = s.replace(old_camera, new_camera, 1)
+old_permission = 'val cameraPermission=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()){granted->if(granted)camera.launch(null)else composerError="Camera permission is needed to take a photo."}\n fun openCamera(){if(ContextCompat.checkSelfPermission(context,Manifest.permission.CAMERA)==PackageManager.PERMISSION_GRANTED)camera.launch(null)else cameraPermission.launch(Manifest.permission.CAMERA)}'
+new_permission = '''fun launchFullCamera(){runCatching{val values=ContentValues().apply{put(MediaStore.Images.Media.DISPLAY_NAME,"TwoShare_${System.currentTimeMillis()}.jpg");put(MediaStore.Images.Media.MIME_TYPE,"image/jpeg");put(MediaStore.Images.Media.RELATIVE_PATH,"Pictures/TwoShare")};context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI,values)}.onSuccess{uri->if(uri!=null){pendingCameraUri=uri;camera.launch(uri)}else composerError="Unable to prepare camera photo."}.onFailure{composerError=friendlyError(it,"Unable to open camera.")}}
+ val cameraPermission=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()){granted->if(granted)launchFullCamera()else composerError="Camera permission is needed to take a photo."}
+ fun openCamera(){if(ContextCompat.checkSelfPermission(context,Manifest.permission.CAMERA)==PackageManager.PERMISSION_GRANTED)launchFullCamera()else cameraPermission.launch(Manifest.permission.CAMERA)}'''
+if old_permission not in s:
+    raise SystemExit('Camera permission anchor not found')
+s = s.replace(old_permission, new_permission, 1)
 
 old_actions = 'actions={FilledTonalIconButton(onClick=onOpenCalendar){Icon(Icons.Default.CalendarMonth,"Calendar")};Spacer(Modifier.width(4.dp));BadgedBox(badge={if(unreadCount>0)Badge{Text(if(unreadCount>99)"99+" else unreadCount.toString())}}){FilledTonalIconButton(onClick=onOpenMessenger){Icon(Icons.Default.ChatBubbleOutline,"Chat")}};Box{IconButton(onClick={menuOpen=true}){Icon(Icons.Default.MoreVert,"More")};DropdownMenu(menuOpen,{menuOpen=false}){DropdownMenuItem(text={Text("Calendar & schedule")},onClick={menuOpen=false;onOpenCalendar()});DropdownMenuItem(text={Text("Account settings")},onClick={menuOpen=false;showAccountSettings=true});DropdownMenuItem(text={Text("Sign out")},onClick={menuOpen=false;scope.launch{runCatching{repository.signOut()};onSignedOut()}})}};Spacer(Modifier.width(4.dp))}'
 new_actions = 'actions={Box{IconButton(onClick={menuOpen=true}){Icon(Icons.Default.MoreVert,"More")};DropdownMenu(menuOpen,{menuOpen=false}){DropdownMenuItem(text={Text("Account settings")},onClick={menuOpen=false;showAccountSettings=true});DropdownMenuItem(text={Text("Sign out")},onClick={menuOpen=false;scope.launch{runCatching{repository.signOut()};onSignedOut()}})}};Spacer(Modifier.width(4.dp))}'
