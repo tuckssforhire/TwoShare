@@ -43,7 +43,7 @@ text = text.replace('scheme = "twoshare"', 'scheme = "twoshare-beta"')
 provider.write_text(text, encoding="utf-8")
 
 text = config.read_text(encoding="utf-8")
-text, urls = re.subn(r'https://[a-z0-9]+\\.supabase\\.co', 'https://ldxjmbkzlnzaukxjrobw.supabase.co', text)
+text, urls = re.subn(r'https://[a-z0-9]+\.supabase\.co', 'https://ldxjmbkzlnzaukxjrobw.supabase.co', text)
 text, keys = re.subn(r'(const val PUBLISHABLE_KEY = ")[^"]+(")', lambda m: m.group(1) + key + m.group(2), text)
 if urls != 1 or keys != 1:
     raise SystemExit("Supabase configuration format changed")
