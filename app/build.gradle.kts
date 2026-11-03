@@ -74,9 +74,7 @@ dependencies {
     implementation("io.github.jan-tennert.supabase:postgrest-kt")
     implementation("io.github.jan-tennert.supabase:storage-kt")
     implementation("io.github.jan-tennert.supabase:functions-kt")
-    // Use Ktor's OkHttp engine on Android. It has stable request cancellation/cleanup semantics
-    // when Compose disposes LaunchedEffect jobs during rapid tab changes.
-    implementation("io.ktor:ktor-client-okhttp:3.6.0")
+    implementation("io.ktor:ktor-client-cio:3.6.0")
     implementation("io.coil-kt:coil-compose:2.7.0")
     implementation("io.github.webrtc-sdk:android:150.7871.01")
     implementation(platform("com.google.firebase:firebase-bom:34.7.0"))
