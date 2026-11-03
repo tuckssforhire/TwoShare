@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import com.twoshare.app.model.NowTogetherSessionInsert
 import com.twoshare.app.model.NowTogetherSessionRow
+import com.twoshare.app.model.ProfileRow
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.functions.functions
 import io.github.jan.supabase.postgrest.from
@@ -14,6 +15,8 @@ import java.util.UUID
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
+data class NowTogetherAttribution(val initiatorName:String,val partnerName:String,val initiatorCaption:String?,val partnerCaption:String?)
+
 class NowTogetherRepository(private val repository: TwoShareRepository) {
     private val supabase = SupabaseProvider.client
     private val bucket = supabase.storage.from("twoshare")
@@ -23,8 +26,22 @@ class NowTogetherRepository(private val repository: TwoShareRepository) {
 
     suspend fun partnerId(): String {
         val me = uid()
-        return supabase.from("profiles").select().decodeList<com.twoshare.app.model.ProfileRow>()
+        return supabase.from("profiles").select().decodeList<ProfileRow>()
             .firstOrNull { it.id != me }?.id ?: error("Partner account was not found.")
+    }
+
+    suspend fun attributionForPost(postId:String):NowTogetherAttribution? {
+        val session=supabase.from("now_together_sessions").select {
+            filter { eq("final_post_id",postId); eq("status","completed") }
+            limit(1)
+        }.decodeList<NowTogetherSessionRow>().firstOrNull()?:return null
+        val profiles=supabase.from("profiles").select().decodeList<ProfileRow>().associateBy{it.id}
+        return NowTogetherAttribution(
+            profiles[session.initiatorId]?.displayName?:"Initiator",
+            profiles[session.partnerId]?.displayName?:"Partner",
+            session.initiatorCaption,
+            session.partnerCaption
+        )
     }
 
     suspend fun create(context: Context, photoUri: Uri, caption: String?): NowTogetherSessionRow {
@@ -40,7 +57,6 @@ class NowTogetherRepository(private val repository: TwoShareRepository) {
             val session = supabase.from("now_together_sessions").insert(
                 NowTogetherSessionInsert(me, partner, path, caption?.trim()?.takeIf { it.isNotEmpty() }, Instant.now().toString())
             ) { select() }.decodeSingle<NowTogetherSessionRow>()
-            // Push is best-effort: the in-app pending-session polling remains the fallback.
             runCatching {
                 supabase.functions.invoke(
                     function = "send-push",
