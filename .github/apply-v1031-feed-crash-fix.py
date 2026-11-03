@@ -72,3 +72,13 @@ fun FeedPostCaption(post: FeedPost, repository: TwoShareRepository) {
     }
 }
 ''')
+
+# Render the preloaded Now Together attribution synchronously. This restores both
+# participant names/captions without doing a database request per visible feed item.
+feed = Path('app/src/main/java/com/twoshare/app/ui/FeedScreen.kt')
+f = feed.read_text()
+old = '''post.caption?.takeIf{it.isNotBlank()}?.let{Text(it,Modifier.padding(horizontal=14.dp,vertical=11.dp),style=MaterialTheme.typography.bodyMedium)}'''
+if old not in f:
+    raise SystemExit('Feed caption render anchor not found')
+f = f.replace(old, '''FeedPostCaption(post,repository)''', 1)
+feed.write_text(f)
