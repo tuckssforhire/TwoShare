@@ -3,11 +3,11 @@ from pathlib import Path
 main = Path('app/src/main/java/com/twoshare/app/MainActivity.kt')
 s = main.read_text()
 old = 'else if(showCalendar)CalendarScreen(repository){showCalendar=false}else if(showMessenger)MessengerScreenV2(repository,{showMessenger=false}){startedCall,incoming->incomingCall=null;activeCallIncoming=incoming;activeCall=startedCall}else FeedScreen(repository,authManager,selectedTheme,::chooseTheme,{showMessenger=true;showCalendar=false},{showCalendar=true;showMessenger=false}){scope.launch'
-new = '''else Scaffold(bottomBar={TwoShareBottomNavigation(selected=when{showCalendar->TwoShareTab.Calendar;showMessenger->TwoShareTab.Messenger;else->TwoShareTab.Feed}){tab->showMessenger=tab==TwoShareTab.Messenger;showCalendar=tab==TwoShareTab.Calendar}}){navPadding->Box(Modifier.fillMaxSize().padding(navPadding)){when{showCalendar->CalendarScreen(repository){showCalendar=false};showMessenger->MessengerScreenV2(repository,{showMessenger=false}){startedCall,incoming->incomingCall=null;activeCallIncoming=incoming;activeCall=startedCall};else->FeedScreen(repository,authManager,selectedTheme,::chooseTheme,{showMessenger=true;showCalendar=false},{showCalendar=true;showMessenger=false}){scope.launch'''
+new = '''else Scaffold(bottomBar={TwoShareBottomNavigation(selected=when{showCalendar->TwoShareTab.Calendar;showMessenger->TwoShareTab.Messenger;else->TwoShareTab.Feed}){tab->when(tab){TwoShareTab.Feed->{showCalendar=false;showMessenger=false};TwoShareTab.Messenger->{showCalendar=false;showMessenger=true};TwoShareTab.Calendar->{showMessenger=false;showCalendar=true}}}}){navPadding->Box(Modifier.fillMaxSize().padding(navPadding)){key(when{showCalendar->"calendar";showMessenger->"messenger";else->"feed"}){when{showCalendar->CalendarScreen(repository){showCalendar=false};showMessenger->MessengerScreenV2(repository,{showMessenger=false}){startedCall,incoming->incomingCall=null;activeCallIncoming=incoming;activeCall=startedCall};else->FeedScreen(repository,authManager,selectedTheme,::chooseTheme,{showMessenger=true;showCalendar=false},{showCalendar=true;showMessenger=false}){scope.launch'''
 if old not in s: raise SystemExit('MainActivity navigation anchor not found')
 s = s.replace(old,new,1)
 old2='biometricLockEnabled=false;biometricRequired=false;signedIn=false}};else->LoginScreen'
-new2='biometricLockEnabled=false;biometricRequired=false;signedIn=false}}}}};else->LoginScreen'
+new2='biometricLockEnabled=false;biometricRequired=false;signedIn=false}}}}}};else->LoginScreen'
 if old2 not in s: raise SystemExit('MainActivity navigation close anchor not found')
 s=s.replace(old2,new2,1);main.write_text(s)
 
