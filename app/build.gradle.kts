@@ -41,11 +41,9 @@ tasks.configureEach {
             var feedText = feed.readText()
             feedText = feedText.replace("import androidx.compose.foundation.lazy.LazyColumn\nimport androidx.compose.foundation.lazy.items", "import androidx.compose.foundation.lazy.LazyColumn\nimport androidx.compose.foundation.lazy.items\nimport androidx.compose.foundation.lazy.rememberLazyListState")
             feedText = feedText.replace("import androidx.compose.material.icons.filled.MoreVert", "import androidx.compose.material.icons.filled.MoreVert\nimport androidx.compose.material.icons.filled.Notifications")
-            // v1.0.31 inserts NowTogetherRepository between presence and reactionRepo, so inject notification state using the stable reactionRepo anchor.
             feedText = feedText.replace("val reactionRepo=remember(repository){FeedReactionRepository(repository)};", "val reactionRepo=remember(repository){FeedReactionRepository(repository)};val feedNotificationRepo=remember(repository){FeedNotificationRepository(repository)};val feedListState=rememberLazyListState();")
             feedText = feedText.replace("var avatarRefresh by remember{mutableLongStateOf(0L)}", "var avatarRefresh by remember{mutableLongStateOf(0L)};var feedNotifications by remember{mutableStateOf(emptyList<FeedNotification>())};var showFeedNotifications by remember{mutableStateOf(false)}")
             feedText = feedText.replace("LaunchedEffect(Unit){refresh(true);while(isActive){delay(10000);", "LaunchedEffect(Unit){refresh(true);feedNotifications=runCatching{feedNotificationRepo.load()}.getOrDefault(emptyList());while(isActive){delay(10000);feedNotifications=runCatching{feedNotificationRepo.load()}.getOrDefault(feedNotifications);")
-            // Calendar/Messenger header shortcuts are removed in v1.0.31. Insert the Feed bell at the surviving actions anchor.
             feedText = feedText.replace("actions={Box{IconButton(onClick={menuOpen=true})", "actions={BadgedBox(badge={val n=feedNotifications.count{!it.isRead};if(n>0)Badge{Text(if(n>99)\"99+\" else n.toString())}}){FilledTonalIconButton(onClick={showFeedNotifications=true}){Icon(Icons.Default.Notifications,\"Feed notifications\")}};Spacer(Modifier.width(4.dp));Box{IconButton(onClick={menuOpen=true})")
             feedText = feedText.replace("else->LazyColumn(Modifier.fillMaxSize(),contentPadding=", "else->LazyColumn(state=feedListState,modifier=Modifier.fillMaxSize(),contentPadding=")
             feedText = feedText.replace("PostCard(post,repository.currentUserId(),avatarRefresh", "PostCard(post,repository,repository.currentUserId(),avatarRefresh")
@@ -76,7 +74,9 @@ dependencies {
     implementation("io.github.jan-tennert.supabase:postgrest-kt")
     implementation("io.github.jan-tennert.supabase:storage-kt")
     implementation("io.github.jan-tennert.supabase:functions-kt")
-    implementation("io.ktor:ktor-client-android:3.6.0")
+    // Use Ktor's OkHttp engine on Android. It has stable request cancellation/cleanup semantics
+    // when Compose disposes LaunchedEffect jobs during rapid tab changes.
+    implementation("io.ktor:ktor-client-okhttp:3.6.0")
     implementation("io.coil-kt:coil-compose:2.7.0")
     implementation("io.github.webrtc-sdk:android:150.7871.01")
     implementation(platform("com.google.firebase:firebase-bom:34.7.0"))
