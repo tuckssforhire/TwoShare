@@ -5,11 +5,14 @@ import android.net.Uri
 import com.twoshare.app.model.NowTogetherSessionInsert
 import com.twoshare.app.model.NowTogetherSessionRow
 import io.github.jan.supabase.auth.auth
+import io.github.jan.supabase.functions.functions
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.query.Order
 import io.github.jan.supabase.storage.storage
 import java.time.Instant
 import java.util.UUID
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 class NowTogetherRepository(private val repository: TwoShareRepository) {
     private val supabase = SupabaseProvider.client
@@ -34,9 +37,21 @@ class NowTogetherRepository(private val repository: TwoShareRepository) {
         val path = "$me/now-together/${UUID.randomUUID()}.jpg"
         bucket.upload(path, bytes) { upsert = false }
         return try {
-            supabase.from("now_together_sessions").insert(
+            val session = supabase.from("now_together_sessions").insert(
                 NowTogetherSessionInsert(me, partner, path, caption?.trim()?.takeIf { it.isNotEmpty() }, Instant.now().toString())
             ) { select() }.decodeSingle<NowTogetherSessionRow>()
+            // Push is best-effort: the in-app pending-session polling remains the fallback.
+            runCatching {
+                supabase.functions.invoke(
+                    function = "send-push",
+                    body = buildJsonObject {
+                        put("recipient_user_id", partner)
+                        put("type", "now_together")
+                        put("session_id", session.id)
+                    }
+                )
+            }
+            session
         } catch (t: Throwable) {
             runCatching { bucket.delete(path) }
             throw t
@@ -87,7 +102,8 @@ class NowTogetherRepository(private val repository: TwoShareRepository) {
                     userId = session.initiatorId,
                     imagePath = session.initiatorPhotoPath ?: error("The first photo is missing."),
                     imagePaths = listOf(session.initiatorPhotoPath, partnerPath),
-                    caption = listOfNotNull(session.initiatorCaption, caption?.trim()?.takeIf { it.isNotEmpty() }).joinToString(" · ").takeIf { it.isNotBlank() }
+                    caption = null,
+                    nowTogetherSessionId = session.id
                 )
             ) { select() }.decodeSingle<com.twoshare.app.model.PostRow>()
             supabase.from("now_together_sessions").update({
