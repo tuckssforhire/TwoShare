@@ -1,6 +1,8 @@
 name: Build TwoShare Beta
 
 on:
+  push:
+    branches: [ feature/v1.0.32-video-foundation ]
   workflow_dispatch:
 
 jobs:
