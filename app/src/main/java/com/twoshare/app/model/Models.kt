@@ -7,10 +7,10 @@ import kotlinx.serialization.Serializable
 data class ProfileRow(val id: String, val email: String, @SerialName("display_name") val displayName: String, @SerialName("last_active_at") val lastActiveAt: String? = null)
 
 @Serializable
-data class PostRow(val id: String, @SerialName("user_id") val userId: String, @SerialName("image_path") val imagePath: String, @SerialName("image_paths") val imagePaths: List<String> = emptyList(), val caption: String? = null, @SerialName("created_at") val createdAt: String)
+data class PostRow(val id: String, @SerialName("user_id") val userId: String, @SerialName("image_path") val imagePath: String, @SerialName("image_paths") val imagePaths: List<String> = emptyList(), val caption: String? = null, @SerialName("created_at") val createdAt: String, @SerialName("now_together_session_id") val nowTogetherSessionId: String? = null)
 @Serializable data class LikeRow(@SerialName("post_id") val postId: String, @SerialName("user_id") val userId: String)
 @Serializable data class CommentRow(val id: String, @SerialName("post_id") val postId: String, @SerialName("user_id") val userId: String, @SerialName("body") val text: String, @SerialName("created_at") val createdAt: String)
-@Serializable data class PostInsert(@SerialName("user_id") val userId: String, @SerialName("image_path") val imagePath: String, @SerialName("image_paths") val imagePaths: List<String>, val caption: String? = null)
+@Serializable data class PostInsert(@SerialName("user_id") val userId: String, @SerialName("image_path") val imagePath: String, @SerialName("image_paths") val imagePaths: List<String>, val caption: String? = null, @SerialName("now_together_session_id") val nowTogetherSessionId: String? = null)
 @Serializable data class LikeInsert(@SerialName("post_id") val postId: String, @SerialName("user_id") val userId: String)
 @Serializable data class CommentInsert(@SerialName("post_id") val postId: String, @SerialName("user_id") val userId: String, @SerialName("body") val text: String)
 
@@ -46,9 +46,10 @@ data class CallRow(
 )
 @Serializable data class CallInsert(@SerialName("caller_id") val callerId: String, @SerialName("callee_id") val calleeId: String, @SerialName("is_video") val isVideo: Boolean)
 
-data class FeedPost(val id: String, val userId: String, val userName: String, val imagePaths: List<String>, val imageUrls: List<String>, val caption: String?, val createdAt: String, val likedBy: Set<String>) {
+data class FeedPost(val id: String, val userId: String, val userName: String, val imagePaths: List<String>, val imageUrls: List<String>, val caption: String?, val createdAt: String, val likedBy: Set<String>, val nowTogetherPartnerName: String? = null, val nowTogetherInitiatorCaption: String? = null, val nowTogetherPartnerCaption: String? = null) {
     val imagePath: String get() = imagePaths.firstOrNull().orEmpty()
     val imageUrl: String get() = imageUrls.firstOrNull().orEmpty()
+    val isNowTogether: Boolean get() = nowTogetherPartnerName != null
 }
 
 data class UiComment(val id: String, val userId: String, val userName: String, val text: String, val createdAt: String)
