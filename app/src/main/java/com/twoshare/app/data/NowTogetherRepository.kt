@@ -45,11 +45,18 @@ class NowTogetherRepository(private val repository: TwoShareRepository) {
 
     suspend fun pendingForMe(): NowTogetherSessionRow? {
         val me = uid()
+        val now = Instant.now()
         return supabase.from("now_together_sessions").select {
             filter { eq("partner_id", me); or { eq("status", "waiting_partner"); eq("status", "partner_opened") } }
             order("created_at", Order.DESCENDING)
-            limit(1)
-        }.decodeList<NowTogetherSessionRow>().firstOrNull()
+            limit(10)
+        }.decodeList<NowTogetherSessionRow>().firstOrNull { session ->
+            val deadline = if (session.status == "partner_opened") {
+                session.graceExpiresAt?.let { runCatching { Instant.parse(it) }.getOrNull() }
+                    ?: runCatching { Instant.parse(session.expiresAt) }.getOrNull()
+            } else runCatching { Instant.parse(session.expiresAt) }.getOrNull()
+            deadline != null && now.isBefore(deadline)
+        }
     }
 
     suspend fun markOpened(session: NowTogetherSessionRow) {
