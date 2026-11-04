@@ -56,6 +56,7 @@ private const val MAX_MESSAGE_WINDOW=600
  var themePicker by remember{mutableStateOf(false)}
  var messages by remember{mutableStateOf(OfflineCache.loadMessages().takeLast(MESSAGE_PAGE))}
  var calls by remember{mutableStateOf(emptyList<CallRow>())}
+ var lastCallHistoryFetchAtMs by remember{mutableLongStateOf(0L)}
  var draft by remember{mutableStateOf("")}
  var attachment by remember{mutableStateOf<Uri?>(null)}
  var replying by remember{mutableStateOf<UiChatMessage?>(null)}
@@ -77,11 +78,11 @@ private const val MAX_MESSAGE_WINDOW=600
  val timeline=remember(messages,calls){(messages.map{epoch(it.createdAt) to (it as Any)}+calls.map{epoch(it.createdAt) to (it as Any)}).sortedBy{it.first}}
  suspend fun refresh(){
   val result=runCatching{chat.loadMessages(messageWindow)}
-  val history=runCatching{repository.loadCallHistory()}.getOrDefault(emptyList())
+  val nowMs=System.currentTimeMillis();val history=if(nowMs-lastCallHistoryFetchAtMs>=60_000L){runCatching{repository.loadCallHistory()}.getOrDefault(calls).also{lastCallHistoryFetchAtMs=nowMs}}else calls
   result.onSuccess{server->
    if(!initialUnreadCaptured){unreadDividerId=server.firstOrNull{it.senderId!=uid&&it.readAt==null}?.id;initialUnreadCaptured=true}
    val pending=messages.filter{it.localState!="sent"};val ids=server.mapNotNull{it.clientId}.toSet()
-   messages=server+pending.filter{it.clientId !in ids};OfflineCache.saveMessages(server);calls=history;connected=true;error=null;runCatching{chat.markIncomingRead()}
+   messages=server+pending.filter{it.clientId !in ids};OfflineCache.saveMessages(server);calls=history;connected=true;error=null;if(server.any{it.senderId!=uid&&it.readAt==null})runCatching{chat.markIncomingRead()}
   }.onFailure{calls=history;connected=false;if(!repository.isTransientNetworkError(it))error=it.localizedMessage?:"Unable to load messages."}
  }
  fun jumpTo(id:String?){if(id==null)return;val index=timeline.indexOfFirst{(it.second as? UiChatMessage)?.id==id};if(index>=0)scope.launch{runCatching{listState.animateScrollToItem(index)}}}
