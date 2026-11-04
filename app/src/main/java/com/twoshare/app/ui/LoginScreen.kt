@@ -100,7 +100,7 @@ fun LoginScreen(authManager: AuthManager, onSignedIn: () -> Unit) {
                             onClick = {
                                 scope.launch {
                                     loading = true; error = null; info = null
-                                    runCatching { authManager.signInWithPassword(context, email, password) }
+                                    runCatchingActive { authManager.signInWithPassword(context, email, password) }
                                         .onSuccess { result ->
                                             when (result) {
                                                 PasswordSignInResult.TRUSTED_DEVICE -> onSignedIn()
@@ -120,7 +120,7 @@ fun LoginScreen(authManager: AuthManager, onSignedIn: () -> Unit) {
                             onClick = {
                                 scope.launch {
                                     loading = true; error = null; info = null
-                                    runCatching { authManager.startEmailCodeSignIn(email) }
+                                    runCatchingActive { authManager.startEmailCodeSignIn(email) }
                                         .onSuccess { verifyingEmail = true; code = ""; info = "We sent a sign-in code to your email. Verify it to sign in and trust this phone." }
                                         .onFailure { error = friendlyAuthError(it) }
                                     loading = false
@@ -135,7 +135,7 @@ fun LoginScreen(authManager: AuthManager, onSignedIn: () -> Unit) {
                             onClick = {
                                 scope.launch {
                                     loading = true; error = null
-                                    runCatching { authManager.verifyNewDevice(context, email, code) }.onSuccess { onSignedIn() }.onFailure { error = friendlyAuthError(it) }
+                                    runCatchingActive { authManager.verifyNewDevice(context, email, code) }.onSuccess { onSignedIn() }.onFailure { error = friendlyAuthError(it) }
                                     loading = false
                                 }
                             }, modifier = Modifier.fillMaxWidth().height(50.dp), enabled = !loading && code.isNotBlank(), shape = RoundedCornerShape(14.dp)

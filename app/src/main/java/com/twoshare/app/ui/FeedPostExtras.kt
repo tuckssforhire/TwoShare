@@ -32,7 +32,7 @@ object FeedCommentExpansion {
     fun expand(postId: String) { expanded[postId] = true }
 }
 
-private fun commentTime(value: String): String = runCatching {
+private fun commentTime(value: String): String = runCatchingActive {
     DateUtils.getRelativeTimeSpanString(OffsetDateTime.parse(value).toInstant().toEpochMilli(), System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS).toString()
 }.getOrDefault("")
 
@@ -71,16 +71,16 @@ fun FeedCommentPreview(post: FeedPost, repository: TwoShareRepository, onComment
     val currentUid = repository.currentUserId()
 
     suspend fun refresh() {
-        runCatching { threadRepo.load(post.id) }.onSuccess { loaded ->
+        runCatchingActive { threadRepo.load(post.id) }.onSuccess { loaded ->
             comments = loaded
-            reactions = runCatching { reactionRepo.load(loaded.map { it.id }) }.getOrDefault(emptyMap())
+            reactions = runCatchingActive { reactionRepo.load(loaded.map { it.id }) }.getOrDefault(emptyMap())
             error = null
         }
     }
 
     fun react(commentId: String, emoji: String) {
         scope.launch {
-            runCatching { reactionRepo.react(commentId, emoji) }
+            runCatchingActive { reactionRepo.react(commentId, emoji) }
                 .onSuccess { reactions = reactionRepo.load(comments.map { it.id }) }
                 .onFailure { error = "Reaction failed." }
         }
@@ -104,7 +104,7 @@ fun FeedCommentPreview(post: FeedPost, repository: TwoShareRepository, onComment
                 Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                     OutlinedTextField(value = draft, onValueChange = { if (it.length <= 1000) draft = it }, modifier = Modifier.weight(1f).bringIntoViewRequester(bringIntoViewRequester).onFocusChanged { state -> if (state.isFocused) scope.launch { delay(300); bringIntoViewRequester.bringIntoView() } }, placeholder = { Text(if (replyTo == null) "Write a comment…" else "Write a reply…") }, maxLines = 3, shape = RoundedCornerShape(20.dp))
                     Spacer(Modifier.width(6.dp))
-                    TextButton(enabled = draft.isNotBlank() && !sending, onClick = { val text = draft; val parent = replyTo?.id; scope.launch { sending = true; runCatching { threadRepo.add(post.id, text, parent) }.onSuccess { draft = ""; replyTo = null; refresh() }.onFailure { error = "Comment failed." }; sending = false } }) { Text(if (sending) "…" else "Post") }
+                    TextButton(enabled = draft.isNotBlank() && !sending, onClick = { val text = draft; val parent = replyTo?.id; scope.launch { sending = true; runCatchingActive { threadRepo.add(post.id, text, parent) }.onSuccess { draft = ""; replyTo = null; refresh() }.onFailure { error = "Comment failed." }; sending = false } }) { Text(if (sending) "…" else "Post") }
                 }
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall) }
             }

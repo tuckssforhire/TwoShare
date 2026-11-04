@@ -151,7 +151,7 @@ fun CallScreen(
         if (!hasPermissions) {
             onDispose { }
         } else {
-            val rtcResult = runCatching {
+            val rtcResult = runCatchingActive {
                 WebRtcCallManager(
                     context = context,
                     videoEnabledForCall = initialCall.isVideo,

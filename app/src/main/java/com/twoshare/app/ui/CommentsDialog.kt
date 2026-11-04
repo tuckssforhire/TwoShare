@@ -29,7 +29,7 @@ fun CommentsDialog(post: FeedPost, repository: TwoShareRepository, onDismiss: ()
     var sending by remember(post.id) { mutableStateOf(false) }
 
     suspend fun refreshComments() {
-        runCatching { repository.loadComments(post.id) }
+        runCatchingActive { repository.loadComments(post.id) }
             .onSuccess { comments = it; error = null }
             .onFailure { error = it.localizedMessage ?: "Unable to load comments" }
     }
@@ -61,7 +61,7 @@ fun CommentsDialog(post: FeedPost, repository: TwoShareRepository, onDismiss: ()
                         }
                     }
                 }
-                OutlinedTextField(value=text,onValueChange={if(it.length<=500)text=it},modifier=Modifier.fillMaxWidth(),placeholder={Text("Write a comment…")},maxLines=4,shape=RoundedCornerShape(18.dp),supportingText={Text("${text.length} / 500")},trailingIcon={FilledIconButton(onClick={scope.launch{sending=true;error=null;runCatching{repository.addComment(post.id,text)}.onSuccess{text="";refreshComments()}.onFailure{error=it.localizedMessage?:"Comment failed"};sending=false}},enabled=text.isNotBlank()&&!sending){if(sending)CircularProgressIndicator(Modifier.size(18.dp),strokeWidth=2.dp)else Icon(Icons.Default.Send,"Send")}})
+                OutlinedTextField(value=text,onValueChange={if(it.length<=500)text=it},modifier=Modifier.fillMaxWidth(),placeholder={Text("Write a comment…")},maxLines=4,shape=RoundedCornerShape(18.dp),supportingText={Text("${text.length} / 500")},trailingIcon={FilledIconButton(onClick={scope.launch{sending=true;error=null;runCatchingActive{repository.addComment(post.id,text)}.onSuccess{text="";refreshComments()}.onFailure{error=it.localizedMessage?:"Comment failed"};sending=false}},enabled=text.isNotBlank()&&!sending){if(sending)CircularProgressIndicator(Modifier.size(18.dp),strokeWidth=2.dp)else Icon(Icons.Default.Send,"Send")}})
             }
         },
         confirmButton = {},

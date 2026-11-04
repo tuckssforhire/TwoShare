@@ -44,7 +44,7 @@ fun PostEditorDialog(
     ) { uris ->
         if (uris.isNotEmpty()) {
             uris.forEach { uri ->
-                runCatching {
+                runCatchingActive {
                     context.contentResolver.takePersistableUriPermission(
                         uri,
                         Intent.FLAG_GRANT_READ_URI_PERMISSION
@@ -207,7 +207,7 @@ fun PostEditorDialog(
                         scope.launch {
                             saving = true
                             error = null
-                            runCatching {
+                            runCatchingActive {
                                 repository.editPostPhotos(
                                     context = context,
                                     post = post,
@@ -272,7 +272,7 @@ fun PostEditorDialog(
                         scope.launch {
                             saving = true
                             error = null
-                            runCatching { repository.deletePost(post) }
+                            runCatchingActive { repository.deletePost(post) }
                                 .onSuccess {
                                     confirmDelete = false
                                     onDeleted()
