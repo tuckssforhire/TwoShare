@@ -48,11 +48,9 @@ class NowTogetherRepository(private val repository: TwoShareRepository) {
         repository.requireAllowedUser()
         val me = uid()
         val partner = partnerId()
-        val bytes = context.contentResolver.openInputStream(photoUri)?.use { it.readBytes() }
-            ?: error("Unable to read the Now Together photo.")
-        require(bytes.size <= 15 * 1024 * 1024) { "Photo must be 15 MB or smaller." }
-        val path = "$me/now-together/${UUID.randomUUID()}.jpg"
-        bucket.upload(path, bytes) { upsert = false }
+        val photo = PhotoOptimizer.prepare(context, photoUri)
+        val path = "$me/now-together/${UUID.randomUUID()}.${photo.extension}"
+        bucket.upload(path, photo.bytes) { upsert = false }
         return try {
             val session = supabase.from("now_together_sessions").insert(
                 NowTogetherSessionInsert(me, partner, path, caption?.trim()?.takeIf { it.isNotEmpty() }, Instant.now().toString())
@@ -107,11 +105,9 @@ class NowTogetherRepository(private val repository: TwoShareRepository) {
         val now = Instant.now()
         val deadline = session.graceExpiresAt?.let(Instant::parse) ?: Instant.parse(session.expiresAt)
         if (now.isAfter(deadline)) error("Now Together expired.")
-        val bytes = context.contentResolver.openInputStream(photoUri)?.use { it.readBytes() }
-            ?: error("Unable to read your Now Together photo.")
-        require(bytes.size <= 15 * 1024 * 1024) { "Photo must be 15 MB or smaller." }
-        val partnerPath = "$me/now-together/${UUID.randomUUID()}.jpg"
-        bucket.upload(partnerPath, bytes) { upsert = false }
+        val photo = PhotoOptimizer.prepare(context, photoUri)
+        val partnerPath = "$me/now-together/${UUID.randomUUID()}.${photo.extension}"
+        bucket.upload(partnerPath, photo.bytes) { upsert = false }
         try {
             val post = supabase.from("posts").insert(
                 com.twoshare.app.model.PostInsert(
