@@ -11,7 +11,7 @@ object ProfilePhotoStore {
     private fun path(uid:String) = "profiles/$uid/avatar.jpg"
     private data class CachedPhoto(val url:String?, val loadedAt:Long)
     private val cache = mutableMapOf<String,CachedPhoto>()
-    private const val CACHE_MS = 5 * 60 * 1000L
+    private const val CACHE_MS = 6 * 60 * 60 * 1000L
 
     fun currentUserId():String? = supabase.auth.currentUserOrNull()?.id
     suspend fun currentPhotoUrl():String? { val uid=currentUserId() ?: return null; return photoUrl(uid) }
