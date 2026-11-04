@@ -36,6 +36,7 @@ fun CommentsDialog(post: FeedPost, repository: TwoShareRepository, onDismiss: ()
     LaunchedEffect(post.id) { refreshComments(); while (isActive) { delay(3_000); refreshComments() } }
 
     AlertDialog(
+        modifier = Modifier.imePadding(),
         onDismissRequest = onDismiss,
         shape = RoundedCornerShape(28.dp),
         title = {
