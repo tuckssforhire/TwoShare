@@ -87,7 +87,7 @@ fun FeedCommentPreview(post: FeedPost, repository: TwoShareRepository, onComment
     }
 
     LaunchedEffect(post.id) {
-        while (isActive) { refresh(); delay(if (FeedCommentExpansion.isExpanded(post.id)) 4_000 else 10_000) }
+        while (isActive) { refresh(); delay(if (FeedCommentExpansion.isExpanded(post.id)) 15_000 else 60_000) }
     }
 
     if (comments.isNotEmpty() || expanded) {
