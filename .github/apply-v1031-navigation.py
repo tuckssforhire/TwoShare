@@ -26,6 +26,8 @@ s=s.replace(old_camera,new_camera,1)
 s=s.replace('LaunchedEffect(Unit){while(isActive){delay(60000);avatarRefresh++}}','LaunchedEffect(Unit){while(isActive){delay(60000);avatarRefresh++}}\n LaunchedEffect(Unit){while(isActive){runCatching{nowRepo.pendingForMe()}.onSuccess{if(it!=null&&nowPending?.id!=it.id)nowPending=it};delay(5000)}}')
 old_actions='actions={FilledTonalIconButton(onClick=onOpenCalendar){Icon(Icons.Default.CalendarMonth,"Calendar")};Spacer(Modifier.width(4.dp));BadgedBox(badge={if(unreadCount>0)Badge{Text(if(unreadCount>99)"99+" else unreadCount.toString())}}){FilledTonalIconButton(onClick=onOpenMessenger){Icon(Icons.Default.ChatBubbleOutline,"Chat")}};Box{IconButton(onClick={menuOpen=true}){Icon(Icons.Default.MoreVert,"More")};DropdownMenu(menuOpen,{menuOpen=false}){DropdownMenuItem(text={Text("Calendar & schedule")},onClick={menuOpen=false;onOpenCalendar()});DropdownMenuItem(text={Text("Account settings")},onClick={menuOpen=false;showAccountSettings=true});DropdownMenuItem(text={Text("Sign out")},onClick={menuOpen=false;scope.launch{runCatching{repository.signOut()};onSignedOut()}})}};Spacer(Modifier.width(4.dp))}'
 new_actions='actions={Box{IconButton(onClick={menuOpen=true}){Icon(Icons.Default.MoreVert,"More")};DropdownMenu(menuOpen,{menuOpen=false}){DropdownMenuItem(text={Text("Account settings")},onClick={menuOpen=false;showAccountSettings=true});DropdownMenuItem(text={Text("Sign out")},onClick={menuOpen=false;scope.launch{runCatching{repository.signOut()};onSignedOut()}})}};Spacer(Modifier.width(4.dp))}'
+old_actions=old_actions.replace('runCatching{','runCatchingActive{')
+new_actions=new_actions.replace('runCatching{','runCatchingActive{')
 if old_actions not in s: raise SystemExit('actions anchor missing')
 s=s.replace(old_actions,new_actions,1)
 old_fab='floatingActionButton={Column(horizontalAlignment=Alignment.End,verticalArrangement=Arrangement.spacedBy(10.dp)){SmallFloatingActionButton(onClick={if(!uploading&&pendingUploadUris.isEmpty())openCamera()}){Icon(Icons.Default.CameraAlt,"Take photo")};ExtendedFloatingActionButton(onClick={if(!uploading&&pendingUploadUris.isEmpty())picker.launch(arrayOf("image/*"))},icon={if(uploading)CircularProgressIndicator(Modifier.size(18.dp),strokeWidth=2.dp) else Icon(Icons.Default.AddPhotoAlternate,"Add photos")},text={Text(if(uploading)uploadProgress?:"Uploading" else "Share photos")})}}'
@@ -39,4 +41,7 @@ insert=''' if(nowStartCaptionOpen)AlertDialog(onDismissRequest={nowStartCaptionO
  nowPending?.let{session->AlertDialog(onDismissRequest={},title={Text("Now Together ❤️")},text={Column(verticalArrangement=Arrangement.spacedBy(10.dp)){Text("Your partner wants a Now Together with you.");OutlinedTextField(nowCaption,{if(it.length<=500)nowCaption=it},label={Text("Caption (optional)")},modifier=Modifier.fillMaxWidth())}},confirmButton={Button({scope.launch{nowBusy=true;runCatching{nowRepo.markOpened(session)}.onSuccess{openCamera("now_reply")}.onFailure{nowMessage=friendlyError(it,"Now Together expired.");nowPending=null};nowBusy=false}},enabled=!nowBusy){Text("Open camera")}},dismissButton={TextButton({nowPending=null}){Text("Not now")}})}
 '''+anchor
 if anchor not in s: raise SystemExit('dialog anchor missing')
-s=s.replace(anchor,insert,1);feed.write_text(s)
+s=s.replace(anchor,insert,1)
+# Keep dynamically generated screen callbacks cancellation-safe as well.
+s=s.replace('runCatching{','runCatchingActive{')
+feed.write_text(s)
