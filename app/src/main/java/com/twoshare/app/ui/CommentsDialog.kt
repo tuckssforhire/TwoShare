@@ -14,8 +14,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.twoshare.app.data.TwoShareRepository
+import com.twoshare.app.data.OfflineCache
+import com.twoshare.app.data.CommentThreadRepository
 import com.twoshare.app.model.FeedPost
-import com.twoshare.app.model.UiComment
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -23,17 +24,25 @@ import kotlinx.coroutines.launch
 @Composable
 fun CommentsDialog(post: FeedPost, repository: TwoShareRepository, onDismiss: () -> Unit) {
     val scope = rememberCoroutineScope()
-    var comments by remember(post.id) { mutableStateOf(emptyList<UiComment>()) }
+    val threadRepo = remember { CommentThreadRepository() }
+    var comments by remember(post.id) { mutableStateOf(OfflineCache.loadThread(post.id)?.comments.orEmpty()) }
     var text by remember(post.id) { mutableStateOf("") }
     var error by remember(post.id) { mutableStateOf<String?>(null) }
     var sending by remember(post.id) { mutableStateOf(false) }
 
     suspend fun refreshComments() {
-        runCatchingActive { repository.loadComments(post.id) }
-            .onSuccess { comments = it; error = null }
+        runCatchingActive { threadRepo.load(post.id) }
+            .onSuccess { loaded ->
+                comments = loaded
+                OfflineCache.saveThread(post.id, loaded, OfflineCache.loadThread(post.id)?.reactions.orEmpty())
+                error = null
+            }
             .onFailure { error = it.localizedMessage ?: "Unable to load comments" }
     }
-    LaunchedEffect(post.id) { refreshComments(); while (isActive) { delay(3_000); refreshComments() } }
+    LaunchedEffect(post.id) {
+        if (!OfflineCache.threadFresh(post.id, 45_000L)) refreshComments()
+        while (isActive) { delay(45_000); refreshComments() }
+    }
 
     AlertDialog(
         modifier = Modifier.imePadding(),
@@ -61,7 +70,7 @@ fun CommentsDialog(post: FeedPost, repository: TwoShareRepository, onDismiss: ()
                         }
                     }
                 }
-                OutlinedTextField(value=text,onValueChange={if(it.length<=500)text=it},modifier=Modifier.fillMaxWidth(),placeholder={Text("Write a comment…")},maxLines=4,shape=RoundedCornerShape(18.dp),supportingText={Text("${text.length} / 500")},trailingIcon={FilledIconButton(onClick={scope.launch{sending=true;error=null;runCatchingActive{repository.addComment(post.id,text)}.onSuccess{text="";refreshComments()}.onFailure{error=it.localizedMessage?:"Comment failed"};sending=false}},enabled=text.isNotBlank()&&!sending){if(sending)CircularProgressIndicator(Modifier.size(18.dp),strokeWidth=2.dp)else Icon(Icons.Default.Send,"Send")}})
+                OutlinedTextField(value=text,onValueChange={if(it.length<=500)text=it},modifier=Modifier.fillMaxWidth(),placeholder={Text("Write a comment…")},maxLines=4,shape=RoundedCornerShape(18.dp),supportingText={Text("${text.length} / 500")},trailingIcon={FilledIconButton(onClick={scope.launch{sending=true;error=null;runCatchingActive{threadRepo.add(post.id,text)}.onSuccess{text="";refreshComments()}.onFailure{error=it.localizedMessage?:"Comment failed"};sending=false}},enabled=text.isNotBlank()&&!sending){if(sending)CircularProgressIndicator(Modifier.size(18.dp),strokeWidth=2.dp)else Icon(Icons.Default.Send,"Send")}})
             }
         },
         confirmButton = {},

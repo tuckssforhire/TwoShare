@@ -36,18 +36,28 @@ data class ThreadComment(
 
 class CommentThreadRepository {
     private val supabase = SupabaseProvider.client
+    companion object {
+        @Volatile private var cachedNames: Map<String, String> = emptyMap()
+        @Volatile private var namesFetchedAtMs: Long = 0L
+    }
 
     suspend fun load(postId: String): List<ThreadComment> {
         val rows = supabase.from("comments").select {
             filter { eq("post_id", postId) }
             order("created_at", Order.ASCENDING)
         }.decodeList<ThreadCommentRow>()
-        val profiles = supabase.from("profiles").select().decodeList<com.twoshare.app.model.ProfileRow>().associateBy { it.id }
+        val nowMs = System.currentTimeMillis()
+        if (cachedNames.isEmpty() || nowMs - namesFetchedAtMs > 300_000L) {
+            cachedNames = supabase.from("profiles").select()
+                .decodeList<com.twoshare.app.model.ProfileRow>()
+                .associate { it.id to it.displayName }
+            namesFetchedAtMs = nowMs
+        }
         return rows.map { row ->
             ThreadComment(
                 row.id,
                 row.userId,
-                profiles[row.userId]?.displayName ?: "User",
+                cachedNames[row.userId] ?: "User",
                 row.body,
                 row.createdAt,
                 row.parentCommentId

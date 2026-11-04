@@ -14,6 +14,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.twoshare.app.data.CommentReactionRepository
 import com.twoshare.app.data.CommentThreadRepository
+import com.twoshare.app.data.OfflineCache
 import com.twoshare.app.data.FeedNotification
 import com.twoshare.app.data.ThreadComment
 import com.twoshare.app.data.TwoShareRepository
@@ -60,8 +61,8 @@ fun FeedCommentPreview(post: FeedPost, repository: TwoShareRepository, onComment
     val threadRepo = remember { CommentThreadRepository() }
     val reactionRepo = remember { CommentReactionRepository() }
     val scope = rememberCoroutineScope()
-    var comments by remember(post.id) { mutableStateOf(emptyList<ThreadComment>()) }
-    var reactions by remember(post.id) { mutableStateOf<Map<String, Map<String, Set<String>>>>(emptyMap()) }
+    var comments by remember(post.id) { mutableStateOf(OfflineCache.loadThread(post.id)?.comments.orEmpty()) }
+    var reactions by remember(post.id) { mutableStateOf(OfflineCache.loadThread(post.id)?.reactions.orEmpty()) }
     var draft by remember(post.id) { mutableStateOf("") }
     var replyTo by remember(post.id) { mutableStateOf<ThreadComment?>(null) }
     var sending by remember(post.id) { mutableStateOf(false) }
@@ -70,10 +71,15 @@ fun FeedCommentPreview(post: FeedPost, repository: TwoShareRepository, onComment
     val expanded = FeedCommentExpansion.isExpanded(post.id)
     val currentUid = repository.currentUserId()
 
-    suspend fun refresh() {
+    suspend fun refresh(force: Boolean = false) {
+        if (!force && OfflineCache.threadFresh(post.id, if (expanded) 45_000L else 180_000L)) return
         runCatchingActive { threadRepo.load(post.id) }.onSuccess { loaded ->
+            val loadedReactions = runCatchingActive {
+                reactionRepo.load(loaded.map { it.id })
+            }.getOrDefault(reactions)
             comments = loaded
-            reactions = runCatchingActive { reactionRepo.load(loaded.map { it.id }) }.getOrDefault(emptyMap())
+            reactions = loadedReactions
+            OfflineCache.saveThread(post.id, loaded, loadedReactions)
             error = null
         }
     }
@@ -81,13 +87,17 @@ fun FeedCommentPreview(post: FeedPost, repository: TwoShareRepository, onComment
     fun react(commentId: String, emoji: String) {
         scope.launch {
             runCatchingActive { reactionRepo.react(commentId, emoji) }
-                .onSuccess { reactions = reactionRepo.load(comments.map { it.id }) }
+                .onSuccess { reactions = reactionRepo.load(comments.map { it.id }); OfflineCache.saveThread(post.id, comments, reactions) }
                 .onFailure { error = "Reaction failed." }
         }
     }
 
-    LaunchedEffect(post.id) {
-        while (isActive) { refresh(); delay(if (FeedCommentExpansion.isExpanded(post.id)) 15_000 else 60_000) }
+    LaunchedEffect(post.id, expanded) {
+        refresh()
+        while (isActive) {
+            delay(if (expanded) 45_000L else 180_000L)
+            refresh(force = true)
+        }
     }
 
     if (comments.isNotEmpty() || expanded) {
@@ -104,7 +114,7 @@ fun FeedCommentPreview(post: FeedPost, repository: TwoShareRepository, onComment
                 Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                     OutlinedTextField(value = draft, onValueChange = { if (it.length <= 1000) draft = it }, modifier = Modifier.weight(1f).bringIntoViewRequester(bringIntoViewRequester).onFocusChanged { state -> if (state.isFocused) scope.launch { delay(300); bringIntoViewRequester.bringIntoView() } }, placeholder = { Text(if (replyTo == null) "Write a comment…" else "Write a reply…") }, maxLines = 3, shape = RoundedCornerShape(20.dp))
                     Spacer(Modifier.width(6.dp))
-                    TextButton(enabled = draft.isNotBlank() && !sending, onClick = { val text = draft; val parent = replyTo?.id; scope.launch { sending = true; runCatchingActive { threadRepo.add(post.id, text, parent) }.onSuccess { draft = ""; replyTo = null; refresh() }.onFailure { error = "Comment failed." }; sending = false } }) { Text(if (sending) "…" else "Post") }
+                    TextButton(enabled = draft.isNotBlank() && !sending, onClick = { val text = draft; val parent = replyTo?.id; scope.launch { sending = true; runCatchingActive { threadRepo.add(post.id, text, parent) }.onSuccess { draft = ""; replyTo = null; refresh(force = true) }.onFailure { error = "Comment failed." }; sending = false } }) { Text(if (sending) "…" else "Post") }
                 }
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall) }
             }
