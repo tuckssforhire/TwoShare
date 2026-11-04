@@ -54,6 +54,7 @@ fun FeedNotificationsDialog(notifications: List<FeedNotification>, onDismiss: ()
     )
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun FeedCommentPreview(post: FeedPost, repository: TwoShareRepository, onComments: () -> Unit) {
     val threadRepo = remember { CommentThreadRepository() }
