@@ -47,7 +47,7 @@ class MainActivity:FragmentActivity(){
  override fun onNewIntent(newIntent:Intent){super.onNewIntent(newIntent);setIntent(newIntent);captureLaunchIntent(newIntent)}
  override fun onStop(){super.onStop();if(!isChangingConfigurations&&biometricLockEnabled)backgroundedAt=System.currentTimeMillis()}
  override fun onStart(){super.onStart();if(biometricLockEnabled&&backgroundedAt>0L&&System.currentTimeMillis()-backgroundedAt>=BIOMETRIC_GRACE_MS)requestBiometricAfterResume=true;backgroundedAt=0L}
- override fun onCreate(savedInstanceState:Bundle?){super.onCreate(savedInstanceState);captureLaunchIntent(intent);OfflineCache.init(this);SupabaseProvider.client.handleDeeplinks(intent);setContent{
+ override fun onCreate(savedInstanceState:Bundle?){super.onCreate(savedInstanceState);captureLaunchIntent(intent);OfflineCache.init(this);ProfilePhotoStore.init(this);SupabaseProvider.client.handleDeeplinks(intent);setContent{
   val context=LocalContext.current;var themeUserId by remember{mutableStateOf(SupabaseProvider.client.auth.currentUserOrNull()?.id)};var selectedTheme by remember{mutableStateOf(loadTheme(context,themeUserId))}
   TwoShareTheme(theme=selectedTheme){
    val repository=remember{TwoShareRepository()};val chatFeatures=remember(repository){ChatFeaturesRepository(repository)};val authManager=remember{AuthManager()};val versionRepository=remember{AppVersionRepository()};val scope=rememberCoroutineScope()

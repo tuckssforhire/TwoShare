@@ -24,6 +24,7 @@ private data class ThreadCommentInsert(
     @SerialName("parent_comment_id") val parentCommentId: String? = null
 )
 
+@Serializable
 data class ThreadComment(
     val id: String,
     val userId: String,
