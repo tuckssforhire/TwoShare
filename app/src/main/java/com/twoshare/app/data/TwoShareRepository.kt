@@ -277,14 +277,10 @@ class TwoShareRepository {
         return cleaned
     }
 
-    private fun preparePhotos(context: Context, imageUris: List<Uri>): List<PreparedPhoto> =
-        imageUris.mapIndexed { index, uri ->
-            val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                ?: error("Unable to read selected image ${index + 1}.")
-            require(bytes.size <= 15 * 1024 * 1024) {
-                "Photo ${index + 1} must be 15 MB or smaller."
-            }
-            PreparedPhoto(bytes, fileExtension(context.contentResolver.getType(uri), "jpg"))
+    private suspend fun preparePhotos(context: Context, imageUris: List<Uri>): List<PreparedPhoto> =
+        imageUris.map { uri ->
+            val photo = PhotoOptimizer.prepare(context, uri)
+            PreparedPhoto(photo.bytes, photo.extension)
         }
 
     suspend fun toggleLike(post: FeedPost) {
