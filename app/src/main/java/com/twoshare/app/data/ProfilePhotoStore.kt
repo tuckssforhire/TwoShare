@@ -31,8 +31,9 @@ object ProfilePhotoStore {
     suspend fun uploadCurrent(context:Context,uri:Uri):String {
         val uid=currentUserId() ?: error("Your session has expired. Please sign in again.")
         val mime=context.contentResolver.getType(uri)?.lowercase().orEmpty();require(mime.startsWith("image/")){"Please choose an image."}
-        val bytes=context.contentResolver.openInputStream(uri)?.use{it.readBytes()} ?: error("Unable to read selected photo.");require(bytes.size<=8*1024*1024){"Profile photo must be 8 MB or smaller."}
-        supabase.storage.from("twoshare").upload(path(uid),bytes){upsert=true}
+        val photo = PhotoOptimizer.prepare(context, uri, maxInputBytes = 8 * 1024 * 1024)
+        require(photo.extension == "jpg" || photo.extension == "jpeg") { "Please choose a supported still photo." }
+        supabase.storage.from("twoshare").upload(path(uid), photo.bytes) { upsert = true }
         cache.remove(uid)
         return photoUrl(uid,true) ?: error("Unable to load profile photo.")
     }
