@@ -1,6 +1,9 @@
 package com.twoshare.app.ui
 
 import android.text.format.DateUtils
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -62,6 +65,7 @@ fun FeedCommentPreview(post: FeedPost, repository: TwoShareRepository, onComment
     var replyTo by remember(post.id) { mutableStateOf<ThreadComment?>(null) }
     var sending by remember(post.id) { mutableStateOf(false) }
     var error by remember(post.id) { mutableStateOf<String?>(null) }
+    val bringIntoViewRequester = remember { BringIntoViewRequester() }
     val expanded = FeedCommentExpansion.isExpanded(post.id)
     val currentUid = repository.currentUserId()
 
@@ -97,7 +101,7 @@ fun FeedCommentPreview(post: FeedPost, repository: TwoShareRepository, onComment
                 if (comments.isNotEmpty()) Text("Hide comments", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.clickable { FeedCommentExpansion.toggle(post.id) })
                 replyTo?.let { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text("Replying to ${it.userName}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary); Text("Cancel", style = MaterialTheme.typography.labelSmall, modifier = Modifier.clickable { replyTo = null }) } }
                 Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                    OutlinedTextField(value = draft, onValueChange = { if (it.length <= 1000) draft = it }, modifier = Modifier.weight(1f), placeholder = { Text(if (replyTo == null) "Write a comment…" else "Write a reply…") }, maxLines = 3, shape = RoundedCornerShape(20.dp))
+                    OutlinedTextField(value = draft, onValueChange = { if (it.length <= 1000) draft = it }, modifier = Modifier.weight(1f).bringIntoViewRequester(bringIntoViewRequester).onFocusChanged { state -> if (state.isFocused) scope.launch { delay(300); bringIntoViewRequester.bringIntoView() } }, placeholder = { Text(if (replyTo == null) "Write a comment…" else "Write a reply…") }, maxLines = 3, shape = RoundedCornerShape(20.dp))
                     Spacer(Modifier.width(6.dp))
                     TextButton(enabled = draft.isNotBlank() && !sending, onClick = { val text = draft; val parent = replyTo?.id; scope.launch { sending = true; runCatching { threadRepo.add(post.id, text, parent) }.onSuccess { draft = ""; replyTo = null; refresh() }.onFailure { error = "Comment failed." }; sending = false } }) { Text(if (sending) "…" else "Post") }
                 }
