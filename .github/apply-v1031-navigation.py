@@ -15,6 +15,7 @@ feed=Path('app/src/main/java/com/twoshare/app/ui/FeedScreen.kt');s=feed.read_tex
 s=s.replace('import androidx.compose.material.icons.filled.AddPhotoAlternate\n','import androidx.compose.material.icons.filled.Add\nimport androidx.compose.material.icons.filled.AddPhotoAlternate\n')
 s=s.replace('import com.twoshare.app.model.FeedPost\n','import com.twoshare.app.model.FeedPost\nimport com.twoshare.app.model.NowTogetherSessionRow\n')
 s=s.replace('import androidx.compose.ui.graphics.Color\n','import androidx.compose.ui.graphics.Color\nimport androidx.compose.ui.draw.clip\n')
+s=s.replace('import androidx.compose.ui.platform.LocalContext\n','import androidx.compose.ui.platform.LocalContext\nimport androidx.compose.ui.platform.LocalDensity\nimport androidx.compose.ui.focus.onFocusChanged\nimport androidx.compose.foundation.rememberScrollState\nimport androidx.compose.foundation.verticalScroll\nimport androidx.compose.foundation.relocation.BringIntoViewRequester\nimport androidx.compose.foundation.relocation.bringIntoViewRequester\n')
 s=s.replace('var menuOpen by remember{mutableStateOf(false)};','var menuOpen by remember{mutableStateOf(false)};var addMenuOpen by remember{mutableStateOf(false)};var pendingCameraUri by remember{mutableStateOf<Uri?>(null)};var cameraMode by remember{mutableStateOf("post")};var nowCaption by remember{mutableStateOf("")};var nowCaptionOpen by remember{mutableStateOf(false)};var nowCapturedUri by remember{mutableStateOf<Uri?>(null)};var nowCaptureMode by remember{mutableStateOf("now_start")};var nowSubmitError by remember{mutableStateOf<String?>(null)};var nowPending by remember{mutableStateOf<NowTogetherSessionRow?>(null)};var nowBusy by remember{mutableStateOf(false)};var nowMessage by remember{mutableStateOf<String?>(null)};')
 s=s.replace('val context=LocalContext.current;val scope=rememberCoroutineScope();val presence=remember{PresenceRepository()};','val context=LocalContext.current;val scope=rememberCoroutineScope();val presence=remember{PresenceRepository()};val nowRepo=remember(repository){NowTogetherRepository(repository)};')
 old_camera='val camera=rememberLauncherForActivityResult(ActivityResultContracts.TakePicturePreview()){bitmap->if(bitmap!=null){val uri=savePostCameraBitmap(context,bitmap);if(uri!=null){composerError=null;pendingUploadUris=listOf(uri)}else composerError="Unable to save camera photo."}}\n val cameraPermission=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()){granted->if(granted)camera.launch(null)else composerError="Camera permission is needed to take a photo."}\n fun openCamera(){if(ContextCompat.checkSelfPermission(context,Manifest.permission.CAMERA)==PackageManager.PERMISSION_GRANTED)camera.launch(null)else cameraPermission.launch(Manifest.permission.CAMERA)}'
@@ -86,17 +87,34 @@ insert=''' nowCapturedUri?.let{photoUri->if(nowCaptionOpen)AlertDialog(
   modifier=Modifier.imePadding(),
   onDismissRequest={if(!nowBusy){nowCaptionOpen=false;nowCapturedUri=null;nowCaption="";nowSubmitError=null;runCatching{context.contentResolver.delete(photoUri,null,null)}}},
   title={Text(if(nowCaptureMode=="now_reply")"Complete Now Together ❤️" else "Start Now Together ❤️")},
-  text={Column(verticalArrangement=Arrangement.spacedBy(10.dp)){
-   Text("Your photo is ready. Add a caption before sharing.",style=MaterialTheme.typography.bodyMedium)
-   AsyncImage(model=photoUri,contentDescription="Your captured Now Together photo",
-    modifier=Modifier.fillMaxWidth().heightIn(max=290.dp).clip(RoundedCornerShape(18.dp)),
-    contentScale=ContentScale.Fit)
-   OutlinedTextField(nowCaption,{if(it.length<=500)nowCaption=it},
-    label={Text("Caption (optional)")},placeholder={Text("Write about this moment…")},
-    supportingText={Text(nowCaption.length.toString()+" / 500")},maxLines=4,
-    modifier=Modifier.fillMaxWidth(),enabled=!nowBusy)
-   nowSubmitError?.let{Text(it,color=MaterialTheme.colorScheme.error,style=MaterialTheme.typography.bodySmall)}
-  }},
+  text={
+   // The keyboard can leave far less vertical room than the photo preview needs.
+   // Keep the caption in a scrollable area and scroll it into view on focus.
+   val keyboardVisible=WindowInsets.ime.getBottom(LocalDensity.current)>0
+   val captionRequester=remember{BringIntoViewRequester()}
+   Column(
+    modifier=Modifier.fillMaxWidth()
+     .heightIn(max=if(keyboardVisible)210.dp else 460.dp)
+     .verticalScroll(rememberScrollState()),
+    verticalArrangement=Arrangement.spacedBy(8.dp)
+   ){
+    Text(if(keyboardVisible)"Add your caption" else "Your photo is ready. Add a caption before sharing.",
+     style=MaterialTheme.typography.bodyMedium)
+    AsyncImage(model=photoUri,contentDescription="Your captured Now Together photo",
+     modifier=Modifier.fillMaxWidth()
+      .height(if(keyboardVisible)64.dp else 220.dp)
+      .clip(RoundedCornerShape(18.dp)),
+     contentScale=ContentScale.Fit)
+    OutlinedTextField(nowCaption,{if(it.length<=500)nowCaption=it},
+     label={Text("Caption (optional)")},placeholder={Text("Write about this moment…")},
+     supportingText={Text(nowCaption.length.toString()+" / 500")},maxLines=4,
+     modifier=Modifier.fillMaxWidth()
+      .bringIntoViewRequester(captionRequester)
+      .onFocusChanged{if(it.isFocused)scope.launch{delay(280);captionRequester.bringIntoView()}},
+     enabled=!nowBusy)
+    nowSubmitError?.let{Text(it,color=MaterialTheme.colorScheme.error,style=MaterialTheme.typography.bodySmall)}
+   }
+  },
   confirmButton={Button(enabled=!nowBusy,onClick={
    if(!nowBusy)scope.launch{
     nowBusy=true
