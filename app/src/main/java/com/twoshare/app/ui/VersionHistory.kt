@@ -13,6 +13,7 @@ import com.twoshare.app.BuildConfig
 data class VersionNote(val version:String,val items:List<String>)
 
 val twoShareVersionHistory=listOf(
+ VersionNote("1.0.36",listOf("Now Together caption field stays visible when the keyboard appears","Photo preview shrinks while typing and the caption scrolls into view","Preserves photo-first capture, Retake and Share actions")),
  VersionNote("1.0.35",listOf("Now Together captures the photo before asking for a caption","Caption screen previews the captured photo with Retake, Cancel and Share","Works for both starting and completing a Now Together moment")),
  VersionNote("1.0.34",listOf("Store five recent Feed posts locally for instant return navigation","Cache shared photos, chat images and profile photos on the device using stable keys","Keep comment threads and reactions locally with periodic background refresh","Reduce unnecessary Supabase egress while preserving new posts and comments")),
  VersionNote("1.0.33",listOf("Prevent cancelled screen tasks from being reported as errors when navigating","Preserve genuine network and login error messages","Retain v1.0.32 egress optimizations and existing app data")),
