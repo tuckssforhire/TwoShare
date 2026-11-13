@@ -84,66 +84,59 @@ if old_fab not in s: raise SystemExit('fab anchor missing')
 s=s.replace(old_fab,new_fab,1).replace('Tap Share photos or the camera to add the first one.','Tap + to add your first moment.')
 # Keep the stable v1.0.30 caption path here. Now Together attribution is loaded separately, never by starting a query from every visible lazy-list item.
 anchor=' if(showAccountSettings)AccountSettingsDialog(authManager,selectedTheme,onThemeSelected){showAccountSettings=false}'
-insert=''' nowCapturedUri?.let{photoUri->if(nowCaptionOpen)AlertDialog(
-  modifier=Modifier.imePadding(),
-  onDismissRequest={if(!nowBusy){nowCaptionOpen=false;nowCapturedUri=null;nowCaption="";nowSubmitError=null;runCatching{context.contentResolver.delete(photoUri,null,null)}}},
-  title={Text(if(nowCaptureMode=="now_reply")"Complete Now Together ❤️" else "Start Now Together ❤️")},
-  text={
-   // The keyboard can leave far less vertical room than the photo preview needs.
-   // Keep the caption in a scrollable area and scroll it into view on focus.
-   val keyboardVisible=WindowInsets.ime.getBottom(LocalDensity.current)>0
-   val captionRequester=remember{BringIntoViewRequester()}
-   Column(
-    modifier=Modifier.fillMaxWidth()
-     .heightIn(max=if(keyboardVisible)210.dp else 460.dp)
-     .verticalScroll(rememberScrollState()),
-    verticalArrangement=Arrangement.spacedBy(8.dp)
-   ){
-    Text(if(keyboardVisible)"Add your caption" else "Your photo is ready. Add a caption before sharing.",
-     style=MaterialTheme.typography.bodyMedium)
-    AsyncImage(model=photoUri,contentDescription="Your captured Now Together photo",
-     modifier=Modifier.fillMaxWidth()
-      .height(if(keyboardVisible)64.dp else 220.dp)
-      .clip(RoundedCornerShape(18.dp)),
-     contentScale=ContentScale.Fit)
-    OutlinedTextField(nowCaption,{if(it.length<=500)nowCaption=it},
-     label={Text("Caption (optional)")},placeholder={Text("Write about this moment…")},
-     supportingText={Text(nowCaption.length.toString()+" / 500")},maxLines=4,
-     modifier=Modifier.fillMaxWidth()
-      .bringIntoViewRequester(captionRequester)
-      .onFocusChanged{if(it.isFocused)scope.launch{delay(280);captionRequester.bringIntoView()}},
-     enabled=!nowBusy)
-    nowSubmitError?.let{Text(it,color=MaterialTheme.colorScheme.error,style=MaterialTheme.typography.bodySmall)}
+insert=''' nowCapturedUri?.let{photoUri->if(nowCaptionOpen){
+  val discardNow={nowCaptionOpen=false;nowCapturedUri=null;nowCaption="";nowSubmitError=null;runCatching{context.contentResolver.delete(photoUri,null,null)};Unit}
+  // Full-screen caption sheet instead of an AlertDialog. The photo fills whatever room is
+  // left above the caption and keyboard (weight), so typing never resizes the layout and
+  // the window never has to pan. The old AlertDialog switched sizes on keyboard state and
+  // panned on each keystroke when it did not fit (e.g. the longer reply title wrapped),
+  // which made the preview shake for the invited partner.
+  Dialog(onDismissRequest={if(!nowBusy)discardNow()},properties=DialogProperties(usePlatformDefaultWidth=false,decorFitsSystemWindows=false)){
+   Surface(Modifier.fillMaxSize(),color=MaterialTheme.colorScheme.surface){
+    Column(Modifier.fillMaxSize().systemBarsPadding().imePadding().padding(horizontal=20.dp,vertical=16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
+     Column{
+      Text(if(nowCaptureMode=="now_reply")"Complete Now Together ❤️" else "Start Now Together ❤️",
+       style=MaterialTheme.typography.titleLarge,fontWeight=FontWeight.SemiBold,maxLines=1,overflow=androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+      Text(if(nowCaptureMode=="now_reply")"Your photo completes your shared moment." else "Your partner will be asked to capture theirs.",
+       style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurfaceVariant,maxLines=1,overflow=androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+     }
+     Box(Modifier.fillMaxWidth().weight(1f).clip(RoundedCornerShape(22.dp)).background(MaterialTheme.colorScheme.surfaceContainerHigh),contentAlignment=Alignment.Center){
+      AsyncImage(model=photoUri,contentDescription="Your captured Now Together photo",modifier=Modifier.fillMaxSize(),contentScale=ContentScale.Fit)
+     }
+     OutlinedTextField(nowCaption,{if(it.length<=500)nowCaption=it},
+      label={Text("Caption (optional)")},placeholder={Text("Write about this moment…")},
+      supportingText={Text(nowCaption.length.toString()+" / 500")},minLines=2,maxLines=3,
+      shape=RoundedCornerShape(18.dp),modifier=Modifier.fillMaxWidth(),enabled=!nowBusy)
+     nowSubmitError?.let{Text(it,color=MaterialTheme.colorScheme.error,style=MaterialTheme.typography.bodySmall)}
+     Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){
+      TextButton(enabled=!nowBusy,onClick={nowCaptionOpen=false;openCamera(nowCaptureMode)}){Text("Retake")}
+      TextButton(enabled=!nowBusy,onClick={discardNow()}){Text("Cancel")}
+      Spacer(Modifier.weight(1f))
+      Button(enabled=!nowBusy,onClick={
+       if(!nowBusy)scope.launch{
+        nowBusy=true
+        nowSubmitError=null
+        val mode=nowCaptureMode
+        runCatching{
+         if(mode=="now_reply"){
+          val session=nowPending?:error("The Now Together request is no longer available.")
+          nowRepo.complete(context,session,photoUri,nowCaption)
+         }else nowRepo.create(context,photoUri,nowCaption)
+        }.onSuccess{
+         nowCaptionOpen=false
+         nowCapturedUri=null
+         nowCaption=""
+         if(mode=="now_reply"){nowPending=null;nowMessage="Now Together · Just now";refresh(true)}
+         else nowMessage="Waiting for your partner to capture their moment…"
+        }.onFailure{nowSubmitError=friendlyError(it,"Unable to share Now Together.")}
+        nowBusy=false
+       }
+      }){if(nowBusy)CircularProgressIndicator(Modifier.size(18.dp),strokeWidth=2.dp)else Text("Share photo")}
+     }
+    }
    }
-  },
-  confirmButton={Button(enabled=!nowBusy,onClick={
-   if(!nowBusy)scope.launch{
-    nowBusy=true
-    nowSubmitError=null
-    val mode=nowCaptureMode
-    runCatching{
-     if(mode=="now_reply"){
-      val session=nowPending?:error("The Now Together request is no longer available.")
-      nowRepo.complete(context,session,photoUri,nowCaption)
-     }else nowRepo.create(context,photoUri,nowCaption)
-    }.onSuccess{
-     nowCaptionOpen=false
-     nowCapturedUri=null
-     nowCaption=""
-     if(mode=="now_reply"){nowPending=null;nowMessage="Now Together · Just now";refresh(true)}
-     else nowMessage="Waiting for your partner to capture their moment…"
-    }.onFailure{nowSubmitError=friendlyError(it,"Unable to share Now Together.")}
-    nowBusy=false
-   }
-  }){if(nowBusy)CircularProgressIndicator(Modifier.size(18.dp),strokeWidth=2.dp)else Text("Share photo")}},
-  dismissButton={Row{
-   TextButton(enabled=!nowBusy,onClick={nowCaptionOpen=false;openCamera(nowCaptureMode)}){Text("Retake")}
-   TextButton(enabled=!nowBusy,onClick={
-    nowCaptionOpen=false;nowCaption="";nowSubmitError=null;nowCapturedUri=null
-    runCatching{context.contentResolver.delete(photoUri,null,null)}
-   }){Text("Cancel")}
-  }}
- )}
+  }
+ }}
  nowMessage?.let{msg->AlertDialog(onDismissRequest={nowMessage=null},title={Text("Now Together")},text={Text(msg)},confirmButton={TextButton({nowMessage=null}){Text("OK")}})}
  if(!nowCaptionOpen)nowPending?.let{session->AlertDialog(
   onDismissRequest={},
