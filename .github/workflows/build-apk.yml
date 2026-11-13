@@ -85,9 +85,8 @@ jobs:
                       if info.get("package_name") == "com.twoshare.app":
                           info["package_name"] = "com.twoshare.app.uitest"
                   path.write_text(json.dumps(config))
-          strings = Path("app/src/main/res/values/strings.xml")
-          text = strings.read_text().replace('<string name="app_name">TwoShare</string>', '<string name="app_name">TwoShare UI Test</string>')
-          strings.write_text(text)
+          manifest = Path("app/src/main/AndroidManifest.xml")
+          manifest.write_text(manifest.read_text().replace('android:label="TwoShare"', 'android:label="TwoShare UI Test"'))
           PY
           mkdir -p "$HOME/.android"
           keytool -genkeypair -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey -keypass android -dname "CN=TwoShare UI Test" -keyalg RSA -keysize 2048 -validity 3650
