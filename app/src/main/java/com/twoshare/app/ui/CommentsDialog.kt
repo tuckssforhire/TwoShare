@@ -37,7 +37,7 @@ fun CommentsDialog(post: FeedPost, repository: TwoShareRepository, onDismiss: ()
                 OfflineCache.saveThread(post.id, loaded, OfflineCache.loadThread(post.id)?.reactions.orEmpty())
                 error = null
             }
-            .onFailure { error = it.localizedMessage ?: "Unable to load comments" }
+            .onFailure { if (!repository.isTransientNetworkError(it)) error = it.localizedMessage ?: "Unable to load comments" else if (comments.isEmpty()) error = "Waiting for connection…" }
     }
     LaunchedEffect(post.id) {
         if (!OfflineCache.threadFresh(post.id, 45_000L)) refreshComments()

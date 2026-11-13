@@ -42,7 +42,7 @@ private val timeFmt=DateTimeFormatter.ofPattern("h:mm a")
 @Composable fun CalendarScreen(repository:TwoShareRepository,onBack:()->Unit){
  val scope=rememberCoroutineScope();val repo=remember(repository){CalendarRepository(repository)}
  var month by remember{mutableStateOf(YearMonth.now(phZone))};var selected by remember{mutableStateOf(LocalDate.now(phZone))};var events by remember{mutableStateOf(emptyList<CalendarEvent>())};var error by remember{mutableStateOf<String?>(null)};var editing by remember{mutableStateOf<CalendarEvent?>(null)};var creating by remember{mutableStateOf(false)};var agenda by remember{mutableStateOf(false)}
- suspend fun refresh(){runCatchingActive{repo.loadEvents()}.onSuccess{events=it;error=null}.onFailure{error=it.localizedMessage?:"Unable to load calendar."}}
+ suspend fun refresh(){runCatchingActive{repo.loadEvents()}.onSuccess{events=it;error=null}.onFailure{if(!repository.isTransientNetworkError(it))error=it.localizedMessage?:"Unable to load calendar." else if(events.isEmpty())error="Waiting for connection…"}}
  LaunchedEffect(Unit){refresh();while(isActive){delay(15000);refresh()}}
  val dayEvents=remember(events,selected){events.filter{occursOn(it,selected)}.sortedBy{it.startAt}}
  val upcoming=remember(events){val today=LocalDate.now(phZone);events.filter{eventDate(it)>=today}.sortedBy{it.startAt}.take(40)}
