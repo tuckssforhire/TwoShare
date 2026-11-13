@@ -43,8 +43,30 @@ class TwoShareRepository {
             "broken pipe",
             "socketexception",
             "connectexception",
-            "request timeout has expired"
+            "request timeout has expired",
+            "software caused connection abort",
+            "connection refused",
+            "no route to host",
+            "socket closed",
+            "socket is closed",
+            "closedchannel",
+            "channel was closed",
+            "stream was reset",
+            "unexpected end of stream",
+            "eofexception",
+            "sslexception",
+            "sslhandshake",
+            "connection was aborted",
+            "unknownhostexception",
+            "jwt expired",
+            "pgrst301",
+            "httprequesttimeoutexception"
         ).any(text::contains)
+    }
+
+    private fun isExpiredSession(t: Throwable): Boolean {
+        val text = generateSequence(t) { it.cause }.joinToString(" ") { it.localizedMessage.orEmpty() }.lowercase()
+        return "jwt expired" in text || "pgrst301" in text || "invalid jwt" in text
     }
 
     internal suspend fun <T> retryNetworkRead(maxAttempts: Int = 5, block: suspend () -> T): T {
@@ -57,6 +79,8 @@ class TwoShareRepository {
             } catch (t: Throwable) {
                 lastFailure = t
                 if (!isTransientNetworkError(t) || attempt == maxAttempts - 1) throw t
+                // After the app sleeps, the access token may expire before auto-refresh runs.
+                if (isExpiredSession(t)) runCatching { supabase.auth.refreshCurrentSession() }
                 delay(750L * (attempt + 1))
             }
         }
@@ -101,17 +125,22 @@ class TwoShareRepository {
     }
 
     suspend fun signOut() {
+        verifiedProfile = null
         supabase.auth.signOut()
     }
 
+    @Volatile private var verifiedProfile: ProfileRow? = null
+
     suspend fun requireAllowedUser(): ProfileRow {
         val uid = recoverCurrentUserId() ?: error("Your session has expired. Please sign in again.")
+        // The allow-list never changes during a session; skip re-checking it on every refresh.
+        verifiedProfile?.takeIf { it.id == uid }?.let { return it }
         return retryNetworkRead {
             supabase.from("profiles")
                 .select { filter { eq("id", uid) } }
                 .decodeList<ProfileRow>()
                 .firstOrNull()
-        } ?: error("This account is not one of the two allowed users.")
+        }?.also { verifiedProfile = it } ?: error("This account is not one of the two allowed users.")
     }
 
     suspend fun loadFeed(): List<FeedPost> {
