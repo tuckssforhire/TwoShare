@@ -2,12 +2,19 @@ package com.twoshare.app.ui.theme
 
 import android.content.Context
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 
 const val THEME_TOGETHER = "together"
 const val THEME_ROSE = "rose"
@@ -68,5 +75,61 @@ fun TwoShareTheme(theme: String = THEME_TOGETHER, darkTheme: Boolean = isSystemI
         THEME_MIDNIGHT -> if (darkTheme) MidnightDark else MidnightLight
         else -> if (darkTheme) TogetherDark else TogetherLight
     }
-    MaterialTheme(colorScheme=colors, typography=Typography(), content=content)
+    MaterialTheme(colorScheme=colors.withTintedSurfaces(darkTheme), typography=TwoShareTypography, shapes=TwoShareShapes, content=content)
 }
+
+/**
+ * Material 3 falls back to the baseline (violet-grey) surface container colors when a
+ * scheme does not set them, so the Rose and Midnight themes ended up with purple cards,
+ * sheets and navigation bars. Derive every container tone from the theme's own surface
+ * and primary color so each theme stays consistent from page background to dialogs.
+ */
+private fun ColorScheme.withTintedSurfaces(dark: Boolean): ColorScheme {
+    fun tint(base: Color, amount: Float) = lerp(base, primary, amount)
+    return if (dark) copy(
+        surfaceDim = background,
+        surfaceContainerLowest = lerp(background, Color.Black, .35f),
+        surfaceContainerLow = tint(surface, .04f),
+        surfaceContainer = tint(surface, .07f),
+        surfaceContainerHigh = tint(surface, .10f),
+        surfaceContainerHighest = tint(surface, .14f),
+        surfaceBright = tint(surface, .18f),
+        surfaceTint = primary
+    ) else copy(
+        surfaceBright = surface,
+        // Page background behind cards: a soft tint so white cards stand out.
+        surfaceContainerLowest = tint(background, .035f),
+        surfaceContainerLow = tint(surface, .045f),
+        surfaceContainer = tint(surface, .075f),
+        surfaceContainerHigh = tint(surface, .10f),
+        surfaceContainerHighest = tint(surface, .135f),
+        surfaceDim = tint(surface, .16f),
+        surfaceTint = primary
+    )
+}
+
+private val BaseTypography = Typography()
+
+/** Slightly bolder headings and labels for a warmer, more confident hierarchy. */
+val TwoShareTypography = BaseTypography.copy(
+    displaySmall = BaseTypography.displaySmall.copy(fontWeight = FontWeight.SemiBold),
+    headlineLarge = BaseTypography.headlineLarge.copy(fontWeight = FontWeight.Bold, letterSpacing = (-0.5).sp),
+    headlineMedium = BaseTypography.headlineMedium.copy(fontWeight = FontWeight.SemiBold, letterSpacing = (-0.25).sp),
+    headlineSmall = BaseTypography.headlineSmall.copy(fontWeight = FontWeight.SemiBold),
+    titleLarge = BaseTypography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
+    titleMedium = BaseTypography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+    titleSmall = BaseTypography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+    bodyLarge = BaseTypography.bodyLarge.copy(lineHeight = 24.sp),
+    bodyMedium = BaseTypography.bodyMedium.copy(lineHeight = 21.sp),
+    labelLarge = BaseTypography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+    labelMedium = BaseTypography.labelMedium.copy(fontWeight = FontWeight.SemiBold)
+)
+
+/** Softer, rounder corners for buttons, cards, menus and dialogs. */
+val TwoShareShapes = Shapes(
+    extraSmall = RoundedCornerShape(8.dp),
+    small = RoundedCornerShape(12.dp),
+    medium = RoundedCornerShape(16.dp),
+    large = RoundedCornerShape(24.dp),
+    extraLarge = RoundedCornerShape(28.dp)
+)

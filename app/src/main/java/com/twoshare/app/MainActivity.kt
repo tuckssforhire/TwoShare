@@ -15,6 +15,8 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -24,6 +26,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
@@ -76,13 +79,24 @@ class MainActivity:FragmentActivity(){
 }
 @Composable private fun BiometricUnlockScreen(error:String?,onUnlock:()->Unit,onUseAccountLogin:()->Unit){
  val loginPhoto=remember{listOf(R.drawable.login_photo_01,R.drawable.login_photo_02,R.drawable.login_photo_03,R.drawable.login_photo_04,R.drawable.login_photo_05,R.drawable.login_photo_06,R.drawable.login_photo_07,R.drawable.login_photo_08,R.drawable.login_photo_09,R.drawable.login_photo_10).random()}
- Box(Modifier.fillMaxSize().background(Color(0xFFF8EEF2))){
-  Image(painterResource(loginPhoto),null,Modifier.fillMaxWidth().fillMaxHeight(.55f).align(Alignment.TopCenter),contentScale=ContentScale.Crop)
-  Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to Color.Transparent,.28f to Color(0x22F8EEF2),.48f to Color(0xFFF8EEF2),1f to Color(0xFFF8EEF2))))
-  Column(Modifier.fillMaxWidth().align(Alignment.BottomCenter).padding(horizontal=24.dp,vertical=28.dp),horizontalAlignment=Alignment.CenterHorizontally){
-   Image(painterResource(loginPhoto),null,Modifier.size(1.dp));Image(painterResource(R.drawable.twoshare_icon),"TwoShare logo",Modifier.size(82.dp));Spacer(Modifier.height(12.dp));Text("TwoShare locked",style=MaterialTheme.typography.headlineSmall);Spacer(Modifier.height(6.dp));Text("Unlock this trusted phone with fingerprint or face.",color=MaterialTheme.colorScheme.onSurfaceVariant);Spacer(Modifier.height(16.dp))
-   Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(24.dp),colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surface.copy(alpha=.96f)),elevation=CardDefaults.cardElevation(defaultElevation=6.dp)){Column(Modifier.fillMaxWidth().padding(18.dp),horizontalAlignment=Alignment.CenterHorizontally){error?.let{Text(it,color=MaterialTheme.colorScheme.error);Spacer(Modifier.height(12.dp))};Button(onClick=onUnlock,modifier=Modifier.fillMaxWidth().height(50.dp),shape=RoundedCornerShape(14.dp)){Text("Unlock with biometrics")};Spacer(Modifier.height(8.dp));OutlinedButton(onClick=onUseAccountLogin,modifier=Modifier.fillMaxWidth()){Text("Use account login")}}}
+ Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)){
+  AuthPhotoBackdrop(loginPhoto)
+  Column(Modifier.fillMaxWidth().align(Alignment.BottomCenter).navigationBarsPadding().padding(horizontal=24.dp,vertical=28.dp),horizontalAlignment=Alignment.CenterHorizontally){
+   AuthLogo(76.dp);Spacer(Modifier.height(14.dp));Text("TwoShare is locked",style=MaterialTheme.typography.headlineSmall);Spacer(Modifier.height(4.dp));Text("Unlock this trusted phone with fingerprint or face.",style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurfaceVariant,textAlign=TextAlign.Center);Spacer(Modifier.height(20.dp))
+   Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(28.dp),colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surface.copy(alpha=.97f)),elevation=CardDefaults.cardElevation(defaultElevation=8.dp)){Column(Modifier.fillMaxWidth().padding(20.dp),horizontalAlignment=Alignment.CenterHorizontally){
+    error?.let{Surface(Modifier.fillMaxWidth(),shape=RoundedCornerShape(14.dp),color=MaterialTheme.colorScheme.errorContainer){Text(it,Modifier.padding(horizontal=14.dp,vertical=10.dp),color=MaterialTheme.colorScheme.onErrorContainer,style=MaterialTheme.typography.bodyMedium,textAlign=TextAlign.Center)};Spacer(Modifier.height(14.dp))}
+    Button(onClick=onUnlock,modifier=Modifier.fillMaxWidth().height(52.dp),shape=RoundedCornerShape(16.dp)){Icon(Icons.Default.Fingerprint,null,Modifier.size(20.dp));Spacer(Modifier.width(8.dp));Text("Unlock")};Spacer(Modifier.height(4.dp))
+    TextButton(onClick=onUseAccountLogin,modifier=Modifier.fillMaxWidth()){Text("Use account login instead")}
+   }}
   }
  }
 }
-@Composable private fun TwoShareStartupScreen(){Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center){Column(horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.Center){Image(painterResource(R.drawable.twoshare_icon),"TwoShare logo",Modifier.size(144.dp));Spacer(Modifier.height(18.dp));Text("TwoShare",style=MaterialTheme.typography.headlineLarge);Spacer(Modifier.height(6.dp));Text("Private sharing for two",style=MaterialTheme.typography.bodyMedium)}}}
+@Composable private fun TwoShareStartupScreen(){
+ val colors=MaterialTheme.colorScheme
+ Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(colors.primaryContainer.copy(alpha=.45f),colors.background,colors.background))),contentAlignment=Alignment.Center){
+  Column(horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.Center){
+   AuthLogo(128.dp);Spacer(Modifier.height(22.dp));Text("TwoShare",style=MaterialTheme.typography.headlineLarge);Spacer(Modifier.height(4.dp));Text("Private sharing for two",style=MaterialTheme.typography.bodyMedium,color=colors.onSurfaceVariant)
+   Spacer(Modifier.height(28.dp));CircularProgressIndicator(Modifier.size(22.dp),strokeWidth=2.dp,color=colors.primary)
+  }
+ }
+}

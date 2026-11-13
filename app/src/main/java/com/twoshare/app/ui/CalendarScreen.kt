@@ -57,7 +57,7 @@ private val timeFmt=DateTimeFormatter.ofPattern("h:mm a")
  val sundayFirstOffset=first.dayOfWeek.value%7
  val cells=List<LocalDate?>(sundayFirstOffset){null}+(1..month.lengthOfMonth()).map{month.atDay(it)}
  Column(Modifier.fillMaxWidth().padding(horizontal=8.dp)){
-  Row(Modifier.fillMaxWidth()){listOf("S","M","T","W","T","F","S").forEach{day->Box(Modifier.weight(1f).aspectRatio(1f),contentAlignment=Alignment.Center){Text(day,textAlign=TextAlign.Center,style=MaterialTheme.typography.labelSmall)}}}
+  Row(Modifier.fillMaxWidth()){listOf("S","M","T","W","T","F","S").forEach{day->Box(Modifier.weight(1f).aspectRatio(1f),contentAlignment=Alignment.Center){Text(day,textAlign=TextAlign.Center,style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)}}}
   cells.chunked(7).forEach{week->
    Row(Modifier.fillMaxWidth()){
     (week+List<LocalDate?>(7-week.size){null}).forEach{date->
@@ -65,8 +65,8 @@ private val timeFmt=DateTimeFormatter.ofPattern("h:mm a")
       if(date!=null){
        val has=events.any{occursOn(it,date)};val selectedDate=date==selected;val todayDate=date==today
        val circleModifier=Modifier.size(44.dp).then(if(todayDate&&!selectedDate)Modifier.border(2.dp,MaterialTheme.colorScheme.primary,CircleShape)else Modifier)
-       if(selectedDate)Surface(shape=CircleShape,color=MaterialTheme.colorScheme.primaryContainer){Box(Modifier.size(44.dp),contentAlignment=Alignment.Center){Text(date.dayOfMonth.toString(),textAlign=TextAlign.Center,fontWeight=FontWeight.Bold)}}else Box(circleModifier,contentAlignment=Alignment.Center){Text(date.dayOfMonth.toString(),textAlign=TextAlign.Center,fontWeight=if(todayDate)FontWeight.Bold else FontWeight.Normal)}
-       if(has)Box(Modifier.align(Alignment.BottomCenter).padding(bottom=3.dp).size(5.dp).background(MaterialTheme.colorScheme.primary,CircleShape))
+       if(selectedDate)Surface(shape=CircleShape,color=MaterialTheme.colorScheme.primary,contentColor=MaterialTheme.colorScheme.onPrimary){Box(Modifier.size(44.dp),contentAlignment=Alignment.Center){Text(date.dayOfMonth.toString(),textAlign=TextAlign.Center,fontWeight=FontWeight.Bold)}}else Box(circleModifier,contentAlignment=Alignment.Center){Text(date.dayOfMonth.toString(),textAlign=TextAlign.Center,fontWeight=if(todayDate)FontWeight.Bold else FontWeight.Normal)}
+       if(has)Box(Modifier.align(Alignment.BottomCenter).padding(bottom=3.dp).size(5.dp).background(if(selectedDate)MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary,CircleShape))
       }
      }
     }
