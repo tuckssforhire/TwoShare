@@ -19,14 +19,14 @@ jobs:
           key: twoshare-debug-keystore-v1
       - name: Check original signing key without exposing key contents
         env:
-          RECOVERY_SECRETS: ${{ toJSON(secrets) }}
+          TWOSHARE_KEYSTORE_B64: ${{ secrets.TWOSHARE_KEYSTORE_B64 }}
         shell: bash
         run: |
           python3 - <<'PY'
           import base64,json,os,pathlib,re,subprocess,tempfile
           expected="F68AE9FE634515DB4143F64595CA6EB70B68CEC73A5615C7942C5D4CF65E6688"
-          secrets=json.loads(os.environ["RECOVERY_SECRETS"])
-          candidates=[(n,v) for n,v in secrets.items() if any(x in n.lower() for x in ("keystore","jks","signing_key")) and isinstance(v,str)]
+          value=os.environ.get("TWOSHARE_KEYSTORE_B64","")
+          candidates=[("TWOSHARE_KEYSTORE_B64",value)] if value else []
           print("Signing-key secret candidates:",len(candidates))
           def matches(path):
               r=subprocess.run(["keytool","-list","-v","-keystore",str(path),"-storepass","android","-alias","androiddebugkey"],capture_output=True,text=True)
