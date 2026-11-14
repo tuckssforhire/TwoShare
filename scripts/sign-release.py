@@ -36,9 +36,9 @@ def main():
                         str(a.unsigned_apk), str(aligned)], check=True)
         signer = ["java", "-jar", str(a.build_tools / "lib" / "apksigner.jar")]
         subprocess.run(signer + ["sign", "--ks", str(a.keystore), "--ks-key-alias", ALIAS,
-                       "--ks-pass", "file:" + str(a.password_file),
-                       "--key-pass", "file:" + str(a.password_file),
-                       "--out", str(a.output_apk), str(aligned)], check=True)
+                       "--ks-pass", "env:TWOSHARE_KEY_PASSWORD",
+                       "--key-pass", "env:TWOSHARE_KEY_PASSWORD",
+                       "--out", str(a.output_apk), str(aligned)], check=True, env=env)
         result = subprocess.run(signer + ["verify", "--verbose", "--print-certs",
                                 str(a.output_apk)], capture_output=True, text=True, check=True)
         found = re.search(r"Signer #1 certificate SHA-256 digest: ([0-9a-fA-F]+)", result.stdout)
