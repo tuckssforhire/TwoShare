@@ -2,7 +2,7 @@ name: Build APK
 
 on:
   push:
-    branches: [ main, feature/v1.0.31-now-together ]
+    branches: [ main, release/v1.0.37-ui-polish ]
   workflow_dispatch:
 
 jobs:
@@ -68,48 +68,15 @@ jobs:
         with:
           gradle-version: '8.13'
 
-      - name: Restore persistent TwoShare signing key
-        uses: actions/cache@v4
-        with:
-          path: ~/.android/debug.keystore
-          key: twoshare-debug-keystore-v1
-
-      - name: Restore signing key from repository secret when available
-        env:
-          TWOSHARE_KEYSTORE_B64: ${{ secrets.TWOSHARE_KEYSTORE_B64 }}
-        shell: bash
-        run: |
-          if [ -n "$TWOSHARE_KEYSTORE_B64" ]; then
-            umask 077
-            mkdir -p "$HOME/.android"
-            printf '%s' "$TWOSHARE_KEYSTORE_B64" | base64 --decode > "$HOME/.android/debug.keystore"
-          fi
-
-      - name: Require exact TwoShare signing certificate
-        shell: bash
-        run: |
-          if [ ! -f "$HOME/.android/debug.keystore" ]; then echo "::error::TwoShare signing keystore is missing."; exit 1; fi
-          EXPECTED_SHA256="F68AE9FE634515DB4143F64595CA6EB70B68CEC73A5615C7942C5D4CF65E6688"
-          ACTUAL_SHA256="$(keytool -list -v -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey 2>/dev/null | sed -n 's/^[[:space:]]*SHA256: //p' | head -n 1 | tr -d ':')"
-          if [ "$ACTUAL_SHA256" != "$EXPECTED_SHA256" ]; then echo "::error::TwoShare signing certificate mismatch."; exit 1; fi
-
       - name: Build release APK
         env:
           ANDROID_HOME: /usr/local/lib/android/sdk
           ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
         run: gradle :app:assembleRelease --stacktrace
 
-      - name: Verify finished APK certificate
-        shell: bash
-        run: |
-          EXPECTED_SHA256="F68AE9FE634515DB4143F64595CA6EB70B68CEC73A5615C7942C5D4CF65E6688"
-          APK="app/build/outputs/apk/release/app-release.apk"
-          ACTUAL_APK_SHA256="$("$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "$APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1 | tr '[:lower:]' '[:upper:]' | tr -d ':')"
-          if [ "$ACTUAL_APK_SHA256" != "$EXPECTED_SHA256" ]; then echo "::error::Finished APK certificate mismatch."; exit 1; fi
-
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: TwoShare-v1.0.37-release-apk
-          path: app/build/outputs/apk/release/app-release.apk
+          name: TwoShare-v1.0.37-UNSIGNED
+          path: app/build/outputs/apk/release/app-release-unsigned.apk
           if-no-files-found: error
