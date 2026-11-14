@@ -1,0 +1,17 @@
+# TwoShare 1.0.37 — 14 November 2026
+
+- Polished login and biometric lock screens, theme surfaces, typography and navigation.
+- Full-screen Now Together caption preview for both starting and replying.
+- Improved photo caching and prefetching, with less disruptive refresh errors.
+- Permanent release signing key with a separately retained recovery backup.
+
+## One-time installation change
+
+This replacement uses a new signing certificate because the old key is unavailable.
+It cannot update the older official app in place. Finish uploads and save local drafts,
+download the new APK to a normal Downloads folder, uninstall the older official TwoShare,
+then install this APK and sign in again. Server-stored photos, messages and calendar
+entries remain attached to the same account. Local drafts and caches may be removed
+when uninstalling. TwoShare UI Test is a separate package and can be removed separately.
+
+Future releases signed with the new permanent key will update version 1.0.37 normally.
