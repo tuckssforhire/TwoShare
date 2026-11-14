@@ -1,0 +1,34 @@
+name: Publish externally signed TwoShare 1.0.37
+on:
+  push:
+    branches: [ release/publish-v1.0.37 ]
+    paths: [ .github/workflows/publish-twoshare-release.yml ]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install APK verification tools
+        run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "build-tools;36.0.0"'
+      - name: Fetch and validate the externally signed release
+        env:
+          RELEASE_APK_URL: 'https://drive.usercontent.google.com/download?id=1vaWsO5YZ0F-DHm6d-BXGDVUNn3RLVezo&export=download&confirm=t&uuid=28c67600-3be1-45a6-86c9-6be6932478fe'
+        run: |
+          curl --fail --location --retry 2 "$RELEASE_APK_URL" --output TwoShare-v1.0.37.apk
+          echo 'b87c0bf3dc5d5bc3b94cf0e0a0562266600df3fb60adfd3fd1bb0e2b516c5510  TwoShare-v1.0.37.apk' | sha256sum --check
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs TwoShare-v1.0.37.apk
+          actual="$("$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs TwoShare-v1.0.37.apk | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')"
+          test "$actual" = 'b3790d1fbc5874b880962e91d8282f4f14cc819207a3f7f2cba1df64eebfef39'
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging TwoShare-v1.0.37.apk | head -1 | grep "name='com.twoshare.app' versionCode='61' versionName='1.0.37'"
+      - name: Publish verified signed APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create v1.0.37 TwoShare-v1.0.37.apk --repo "$GITHUB_REPOSITORY" --target ca1a3838ecae4618c96f350480ed4149fe4b56f9 --title "TwoShare 1.0.37" --notes-file RELEASE_NOTES.md
