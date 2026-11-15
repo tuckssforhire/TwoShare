@@ -153,6 +153,13 @@ class TwoShareRepository {
         if (posts.isEmpty()) return emptyList()
 
         val profiles = loadProfiles()
+        // Load Now Together attribution once with the feed. Do not start a database
+        // request from every visible post while LazyColumn is scrolling.
+        val nowTogetherByPost = retryNetworkRead {
+            supabase.from("now_together_sessions").select {
+                filter { eq("status", "completed") }
+            }.decodeList<NowTogetherSessionRow>()
+        }.mapNotNull { session -> session.finalPostId?.let { it to session } }.toMap()
         val likes = retryNetworkRead {
             supabase.from("likes")
                 .select()
@@ -179,7 +186,10 @@ class TwoShareRepository {
                 imageUrls = urls,
                 caption = post.caption,
                 createdAt = post.createdAt,
-                likedBy = likes[post.id].orEmpty().map { it.userId }.toSet()
+                likedBy = likes[post.id].orEmpty().map { it.userId }.toSet(),
+                nowTogetherPartnerName = nowTogetherByPost[post.id]?.let { session -> profiles[session.partnerId]?.displayName ?: "Partner" },
+                nowTogetherInitiatorCaption = nowTogetherByPost[post.id]?.initiatorCaption,
+                nowTogetherPartnerCaption = nowTogetherByPost[post.id]?.partnerCaption
             )
         }
     }
@@ -454,7 +464,7 @@ class TwoShareRepository {
     suspend fun toggleMessageReaction(message: UiChatMessage, emoji: String) {
         val uid = recoverCurrentUserId() ?: error("Your session has expired. Please sign in again.")
         requireAllowedUser()
-        require(emoji in allowedReactions)
+        require(emoji.isNotBlank() && emoji.codePointCount(0, emoji.length) <= 16)
         if (message.reactions[emoji]?.contains(uid) == true) {
             supabase.from("message_reactions").delete {
                 filter {
