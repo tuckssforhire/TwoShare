@@ -45,6 +45,10 @@ values ('SECOND-USER-UUID', 'Person 2');
 
 Those two `profiles` rows are the allow-list. A valid Supabase Auth account without a matching profile cannot read the feed or the private photo bucket.
 
+### Shared Lists and live updates
+
+Run `supabase/shared_lists_and_realtime.sql` once in **SQL Editor**. It creates the shared list tables (same two-user RLS as the feed), adds starter lists, and enables Realtime for chat, calls and lists. Realtime still applies RLS, and the app keeps a slower polling backup if the live connection drops.
+
 ## 3. Connect the Android app
 
 Open:
