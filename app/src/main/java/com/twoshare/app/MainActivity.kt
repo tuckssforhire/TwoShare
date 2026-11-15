@@ -61,6 +61,7 @@ class MainActivity:FragmentActivity(){
    fun applyPendingCalendar(){if(pendingOpenCalendar){showMessenger=false;showLists=false;showCalendar=true;pendingOpenCalendar=false}}
    BackHandler(enabled=authChecked&&signedIn&&!biometricRequired&&activeCall==null){when{showCalendar->showCalendar=false;showMessenger->showMessenger=false;showLists->showLists=false;else->showExitConfirmation=true}}
    LaunchedEffect(signedIn,biometricRequired){if(signedIn&&!biometricRequired)LiveUpdates.start() else{LiveUpdates.stop();if(!signedIn){showLists=false;SharedListsRepository.clearCache()}}}
+   LaunchedEffect(signedIn,biometricRequired){if(!signedIn||biometricRequired)return@LaunchedEffect;var seenSettings=LiveUpdates.version(LiveUpdates.SETTINGS_TABLES);while(isActive){runCatchingActive{LoginBackgroundStore.sync(context)};seenSettings=LiveUpdates.awaitChange(LiveUpdates.SETTINGS_TABLES,seenSettings,1_800_000L,1_800_000L)}}
    LaunchedEffect(Unit){runCatchingActive{versionRepository.latestVersion()}.getOrNull()?.takeIf{it.latestVersionCode>BuildConfig.VERSION_CODE}?.let{updateInfo=it}}
    LaunchedEffect(Unit){val startedAt=System.currentTimeMillis();val restored=authManager.restoreTrustedSession(this@MainActivity);biometricLockEnabled=restored&&authManager.isBiometricEnabled(this@MainActivity);if(restored&&biometricLockEnabled){if(authManager.canUseBiometrics(this@MainActivity))biometricRequired=true else{runCatchingActive{repository.signOut()};signedIn=false}}else signedIn=restored;if(restored)refreshThemeForCurrentUser();val remainingSplash=700L-(System.currentTimeMillis()-startedAt);if(remainingSplash>0)delay(remainingSplash);authChecked=true}
    DisposableEffect(Unit){val observer=androidx.lifecycle.LifecycleEventObserver{_,event->if(event==androidx.lifecycle.Lifecycle.Event.ON_RESUME){if(requestBiometricAfterResume&&signedIn&&authManager.isBiometricEnabled(this@MainActivity)){requestBiometricAfterResume=false;biometricRequired=true}else if(signedIn&&!biometricRequired)applyPendingCalendar()}};lifecycle.addObserver(observer);onDispose{lifecycle.removeObserver(observer)}}
@@ -79,7 +80,7 @@ class MainActivity:FragmentActivity(){
  companion object{private const val BIOMETRIC_GRACE_MS=5*60*1000L}
 }
 @Composable private fun BiometricUnlockScreen(error:String?,onUnlock:()->Unit,onUseAccountLogin:()->Unit){
- val loginPhoto=remember{listOf(R.drawable.login_photo_01,R.drawable.login_photo_02,R.drawable.login_photo_03,R.drawable.login_photo_04,R.drawable.login_photo_05,R.drawable.login_photo_06,R.drawable.login_photo_07,R.drawable.login_photo_08,R.drawable.login_photo_09,R.drawable.login_photo_10).random()}
+ val loginPhoto=rememberLoginBackground()
  Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)){
   AuthPhotoBackdrop(loginPhoto)
   Column(Modifier.fillMaxWidth().align(Alignment.BottomCenter).navigationBarsPadding().padding(horizontal=24.dp,vertical=28.dp),horizontalAlignment=Alignment.CenterHorizontally){

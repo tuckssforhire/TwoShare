@@ -47,20 +47,7 @@ fun LoginScreen(authManager: AuthManager, onSignedIn: () -> Unit) {
     var info by remember { mutableStateOf<String?>(null) }
     var passwordVisible by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
-    val loginPhoto = remember {
-        listOf(
-            R.drawable.login_photo_01,
-            R.drawable.login_photo_02,
-            R.drawable.login_photo_03,
-            R.drawable.login_photo_04,
-            R.drawable.login_photo_05,
-            R.drawable.login_photo_06,
-            R.drawable.login_photo_07,
-            R.drawable.login_photo_08,
-            R.drawable.login_photo_09,
-            R.drawable.login_photo_10
-        ).random()
-    }
+    val loginPhoto = rememberLoginBackground()
 
     error?.let { message ->
         AlertDialog(onDismissRequest = { error = null }, title = { Text("Unable to continue") }, text = { Text(message) }, confirmButton = { Button(onClick = { error = null }) { Text("OK") } })
@@ -167,10 +154,10 @@ fun LoginScreen(authManager: AuthManager, onSignedIn: () -> Unit) {
  * sign-in and lock screens look right in light and dark mode and in every theme.
  */
 @Composable
-fun BoxScope.AuthPhotoBackdrop(photo: Int) {
+fun BoxScope.AuthPhotoBackdrop(photo: androidx.compose.ui.graphics.painter.Painter) {
     val background = MaterialTheme.colorScheme.background
     Image(
-        painter = painterResource(photo),
+        painter = photo,
         contentDescription = null,
         contentScale = ContentScale.Crop,
         modifier = Modifier.fillMaxWidth().fillMaxHeight(0.58f).align(Alignment.TopCenter)
