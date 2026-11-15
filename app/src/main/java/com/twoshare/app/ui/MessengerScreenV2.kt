@@ -88,7 +88,7 @@ private const val MAX_MESSAGE_WINDOW=600
  }
  fun jumpTo(id:String?){if(id==null)return;val index=timeline.indexOfFirst{(it.second as? UiChatMessage)?.id==id};if(index>=0)scope.launch{runCatchingActive{listState.animateScrollToItem(index)}}}
  LaunchedEffect(messageWindow){refresh()}
- LaunchedEffect(Unit){while(isActive){delay(15000);refresh()}}
+ LaunchedEffect(Unit){var seen=LiveUpdates.version(LiveUpdates.CHAT_TABLES);while(isActive){seen=LiveUpdates.awaitChange(LiveUpdates.CHAT_TABLES,seen,30_000L,15_000L);refresh()}}
  LaunchedEffect(Unit){while(isActive){runCatchingActive{presence.heartbeat()};partner=presence.partner()?:partner;presenceTick=System.currentTimeMillis();delay(30000)}}
  LaunchedEffect(Unit){while(isActive){delay(300000);avatarRefresh++}}
  LaunchedEffect(timeline.size){if(!initialScrollDone&&timeline.isNotEmpty()){delay(100);val count=listState.layoutInfo.totalItemsCount;if(count>0){runCatchingActive{listState.scrollToItem(timeline.lastIndex.coerceAtMost(count-1))};initialScrollDone=true}}}

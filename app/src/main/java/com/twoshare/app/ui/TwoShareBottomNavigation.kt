@@ -4,9 +4,11 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.ChatBubble
+import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.material.icons.outlined.Checklist
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -19,13 +21,14 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
-enum class TwoShareTab { Feed, Messenger, Calendar }
+enum class TwoShareTab { Feed, Messenger, Lists, Calendar }
 
 @Composable
 fun TwoShareBottomNavigation(selected: TwoShareTab, onSelect: (TwoShareTab) -> Unit) {
     NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainer, tonalElevation = 0.dp) {
         TabItem(TwoShareTab.Feed, "Feed", Icons.Filled.PhotoLibrary, Icons.Outlined.PhotoLibrary, selected, onSelect)
         TabItem(TwoShareTab.Messenger, "Messenger", Icons.Filled.ChatBubble, Icons.Outlined.ChatBubbleOutline, selected, onSelect)
+        TabItem(TwoShareTab.Lists, "Lists", Icons.Filled.Checklist, Icons.Outlined.Checklist, selected, onSelect)
         TabItem(TwoShareTab.Calendar, "Calendar", Icons.Filled.CalendarMonth, Icons.Outlined.CalendarMonth, selected, onSelect)
     }
 }

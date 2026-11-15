@@ -9,7 +9,7 @@ plugins {
 android {
     namespace = "com.twoshare.app"
     compileSdk = 36
-    defaultConfig { applicationId = "com.twoshare.app"; minSdk = 26; targetSdk = 36; versionCode = 61; versionName = "1.0.37" }
+    defaultConfig { applicationId = "com.twoshare.app"; minSdk = 26; targetSdk = 36; versionCode = 62; versionName = "1.0.38" }
     signingConfigs { getByName("debug") { storeFile = file("${System.getProperty("user.home")}/.android/debug.keystore"); storePassword = "android"; keyAlias = "androiddebugkey"; keyPassword = "android" } }
     buildTypes { getByName("debug") { signingConfig = signingConfigs.getByName("debug") }; getByName("release") { isDebuggable = false; isMinifyEnabled = false; signingConfig = null } }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
@@ -35,6 +35,7 @@ dependencies {
     implementation("io.github.jan-tennert.supabase:postgrest-kt")
     implementation("io.github.jan-tennert.supabase:storage-kt")
     implementation("io.github.jan-tennert.supabase:functions-kt")
+    implementation("io.github.jan-tennert.supabase:realtime-kt")
     implementation("io.ktor:ktor-client-cio:3.6.0")
     implementation("io.coil-kt:coil-compose:2.7.0")
     implementation("io.github.webrtc-sdk:android:150.7871.01")

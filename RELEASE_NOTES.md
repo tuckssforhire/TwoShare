@@ -1,3 +1,13 @@
+# TwoShare 1.0.38 — test build (not released)
+
+- New Lists tab: shared groceries, bucket list, movies, places and custom lists.
+- Live updates for chat, reactions, edits, incoming calls and lists, with automatic
+  reconnection and a polling backup.
+- Chat refresh downloads only the reactions and edits for the messages on screen.
+- Build-time source rewriting removed; local and GitHub Actions builds use the same source.
+- Requires `supabase/shared_lists_and_realtime.sql` before the Lists tab and live updates work.
+- Updates 1.0.37 in place when signed with the permanent release key (see SIGNING.md).
+
 # TwoShare 1.0.37 — 14 November 2026
 
 - Polished login and biometric lock screens, theme surfaces, typography and navigation.
