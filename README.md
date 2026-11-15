@@ -47,7 +47,7 @@ Those two `profiles` rows are the allow-list. A valid Supabase Auth account with
 
 ### Shared Lists and live updates (1.0.38)
 
-Run `supabase/shared_lists_and_realtime.sql` once in **SQL Editor**. It runs in one transaction and is safe to re-run. It creates the shared list tables with the same two-user RLS as the feed, server-side attribution triggers, column-level grants, one-time starter lists, and enables Realtime for chat, calls and lists. Realtime still applies RLS, and the app keeps a polling backup when the live connection is down.
+Run `supabase/shared_lists_and_realtime.sql` once in **SQL Editor**. It runs in one transaction and is safe to re-run. It creates the shared list tables with the same two-user RLS as the feed, server-side attribution triggers, column-level grants, one-time starter lists, and creates the shared login-background setting, and enables Realtime for chat, calls, lists and settings. Realtime still applies RLS, and the app keeps a polling backup when the live connection is down.
 
 ## 3. Connect the Android app
 

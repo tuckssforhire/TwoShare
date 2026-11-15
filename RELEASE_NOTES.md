@@ -3,6 +3,8 @@
 - New Lists tab: shared groceries, bucket list, movies, places and custom lists.
 - Live updates for chat, reactions, edits, incoming calls and lists, with automatic
   reconnection and a polling backup.
+- Shared login background (built-in, random or your own photo) for both phones, set in
+  Account & settings; each phone keeps a local copy for the sign-in and lock screens.
 - Chat refresh downloads only the reactions and edits for the messages on screen.
 - Build-time source rewriting removed; local and GitHub Actions builds use the same source.
 - Requires `supabase/shared_lists_and_realtime.sql` before the Lists tab and live updates work.

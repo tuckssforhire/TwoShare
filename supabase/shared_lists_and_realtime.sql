@@ -169,7 +169,50 @@ begin
   end if;
 end $$;
 
--- 6. Live updates --------------------------------------------------------------------
+-- 6. Shared settings (login background for both phones) -----------------------------
+create table if not exists public.shared_settings (
+  key text primary key check (key in ('login_background')),
+  value text not null check (char_length(value) between 1 and 300),
+  updated_by uuid references public.profiles(id) on delete set null,
+  updated_at timestamptz not null default now()
+);
+
+create or replace function public.twoshare_settings_attribution()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  if tg_op = 'UPDATE' then new.key := old.key; end if;
+  new.updated_by := coalesce(auth.uid(), new.updated_by);
+  new.updated_at := now();
+  return new;
+end $$;
+
+drop trigger if exists twoshare_settings_attribution on public.shared_settings;
+create trigger twoshare_settings_attribution
+  before insert or update on public.shared_settings
+  for each row execute function public.twoshare_settings_attribution();
+
+revoke all on table public.shared_settings from anon, authenticated;
+grant select on table public.shared_settings to authenticated;
+grant insert (key, value) on table public.shared_settings to authenticated;
+grant update (key, value) on table public.shared_settings to authenticated;
+
+alter table public.shared_settings enable row level security;
+drop policy if exists "TwoShare settings read" on public.shared_settings;
+drop policy if exists "TwoShare settings insert" on public.shared_settings;
+drop policy if exists "TwoShare settings update" on public.shared_settings;
+create policy "TwoShare settings read" on public.shared_settings for select to authenticated
+  using (public.is_twoshare_user());
+create policy "TwoShare settings insert" on public.shared_settings for insert to authenticated
+  with check (public.is_twoshare_user());
+create policy "TwoShare settings update" on public.shared_settings for update to authenticated
+  using (public.is_twoshare_user()) with check (public.is_twoshare_user());
+-- Custom background photos are stored in the existing private "twoshare" bucket under
+-- <your user id>/login-background/, the same folder pattern the app already uses for posts.
+
+-- 7. Live updates --------------------------------------------------------------------
 -- Realtime only sends changes for tables in the supabase_realtime publication and applies
 -- each table's RLS, so only the two TwoShare users receive them. Missing tables are skipped.
 do $$
@@ -178,7 +221,7 @@ begin
   if not exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
     create publication supabase_realtime;
   end if;
-  foreach t in array array['messages', 'message_reactions', 'message_edits', 'calls', 'shared_lists', 'shared_list_items'] loop
+  foreach t in array array['messages', 'message_reactions', 'message_edits', 'calls', 'shared_lists', 'shared_list_items', 'shared_settings'] loop
     if to_regclass('public.' || t) is not null
        and not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = t) then
       execute format('alter publication supabase_realtime add table public.%I', t);

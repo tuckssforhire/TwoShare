@@ -50,7 +50,8 @@ object LiveUpdates {
     val CHAT_TABLES = setOf("messages", "message_reactions", "message_edits")
     val CALL_TABLES = setOf("calls")
     val LIST_TABLES = setOf("shared_lists", "shared_list_items")
-    private val ALL_TABLES = CHAT_TABLES + CALL_TABLES + LIST_TABLES
+    val SETTINGS_TABLES = setOf("shared_settings")
+    private val ALL_TABLES = CHAT_TABLES + CALL_TABLES + LIST_TABLES + SETTINGS_TABLES
 
     private const val SUBSCRIBE_TIMEOUT_MS = 15_000L
     private const val MIN_RETRY_MS = 1_000L
