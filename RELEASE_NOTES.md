@@ -1,3 +1,12 @@
+# TwoShare 1.0.39 — test build (not released)
+
+- "typing…" in chat over a private Realtime channel (nothing stored). Requires
+  `supabase/typing_indicator.sql`; without it chat works as before, minus the indicator.
+- Unread chat badge on the feed updates live.
+- Save photo to phone (Pictures/TwoShare) from the photo viewer, using the cached copy.
+- Shared login background for both phones (from the 1.0.38 integration branch); requires
+  the shared_settings part of `supabase/shared_lists_and_realtime.sql`.
+
 # TwoShare 1.0.38 — test build (not released)
 
 - New Lists tab: shared groceries, bucket list, movies, places and custom lists.

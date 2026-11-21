@@ -13,6 +13,7 @@ import com.twoshare.app.BuildConfig
 data class VersionNote(val version:String,val items:List<String>)
 
 val twoShareVersionHistory=listOf(
+ VersionNote("1.0.39",listOf("See when your partner is typing in chat","Unread chat badge updates instantly","Save shared photos to your phone from the photo viewer")),
  VersionNote("1.0.38",listOf("New Lists tab for groceries, bucket list, movies, places and your own lists","Chat messages, reactions and incoming calls now arrive live","Reconnects automatically and catches up after the app was in the background","Choose a shared login background for both phones in Account & settings")),
  VersionNote("1.0.37",listOf("Polished login, lock screen, themes and navigation","Full-screen Now Together caption screen","Photos stay cached and refresh errors are less disruptive")),
  VersionNote("1.0.36",listOf("Now Together caption field stays visible when the keyboard appears","Photo preview shrinks while typing and the caption scrolls into view","Preserves photo-first capture, Retake and Share actions")),

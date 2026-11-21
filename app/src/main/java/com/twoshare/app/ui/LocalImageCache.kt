@@ -1,6 +1,11 @@
 package com.twoshare.app.ui
 
+import android.content.ContentValues
 import android.content.Context
+import android.os.Build
+import android.provider.MediaStore
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import android.net.Uri
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -55,6 +60,32 @@ object LocalImageCache {
    .diskCacheKey(key).memoryCacheKey("$key:$variant")
    .diskCachePolicy(CachePolicy.ENABLED).memoryCachePolicy(CachePolicy.ENABLED)
    .crossfade(false).build()
+ }
+ /**
+  * Saves the original shared photo to Pictures/TwoShare. Uses the copy already cached on the
+  * phone when there is one, so saving a photo you've viewed costs no extra download.
+  */
+ suspend fun saveToGallery(context:Context,url:String):Unit=withContext(Dispatchers.IO){
+  val loader=context.imageLoader
+  val key=diskKey(url)
+  fun cached():ByteArray?=loader.diskCache?.openSnapshot(key)?.use{snapshot->snapshot.data.toFile().readBytes()}
+  val bytes=cached()?:run{loader.execute(request(context,url,"save"));cached()}?:error("Couldn't download the photo. Check your connection and try again.")
+  val (mime,ext)=when{
+   bytes.size>3&&bytes[0]==0x89.toByte()&&bytes[1]=='P'.code.toByte()->"image/png" to "png"
+   bytes.size>11&&String(bytes,8,4,Charsets.US_ASCII)=="WEBP"->"image/webp" to "webp"
+   else->"image/jpeg" to "jpg"
+  }
+  val resolver=context.contentResolver
+  val values=ContentValues().apply{
+   put(MediaStore.Images.Media.DISPLAY_NAME,"TwoShare_${System.currentTimeMillis()}.$ext")
+   put(MediaStore.Images.Media.MIME_TYPE,mime)
+   if(Build.VERSION.SDK_INT>=29){put(MediaStore.Images.Media.RELATIVE_PATH,"Pictures/TwoShare");put(MediaStore.Images.Media.IS_PENDING,1)}
+  }
+  val uri=resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI,values)?:error("Couldn't save the photo.")
+  try{
+   resolver.openOutputStream(uri)?.use{it.write(bytes)}?:error("Couldn't save the photo.")
+   if(Build.VERSION.SDK_INT>=29)resolver.update(uri,ContentValues().apply{put(MediaStore.Images.Media.IS_PENDING,0)},null,null)
+  }catch(t:Throwable){resolver.delete(uri,null,null);throw t}
  }
  fun warmRecent(context:Context,posts:List<FeedPost>){
   posts.take(5).forEach{post->warmPost(context,post)}

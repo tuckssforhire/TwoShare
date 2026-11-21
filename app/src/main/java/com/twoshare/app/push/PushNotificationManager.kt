@@ -1,5 +1,6 @@
 package com.twoshare.app.push
 
+import com.twoshare.app.BuildConfig
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
@@ -30,8 +31,10 @@ object PushNotificationManager {
   val ringtoneUri=Uri.parse("android.resource://${context.packageName}/${R.raw.twolink_smooth_jazz}")
   manager.createNotificationChannel(NotificationChannel(CHANNEL_CALLS,"TwoLink calls",NotificationManager.IMPORTANCE_HIGH).apply{description="Incoming TwoLink voice and video calls";setSound(ringtoneUri,AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE).build());enableVibration(true)})
  }
- suspend fun registerCurrentDevice(context:Context){ensureNotificationChannels(context);val user=SupabaseProvider.client.auth.currentUserOrNull()?:return;val token=FirebaseMessaging.getInstance().token.await();SupabaseProvider.client.from("device_push_tokens").upsert(DevicePushTokenRow(user.id,token,deviceId(context))){onConflict="user_id,device_id"}}
- suspend fun registerToken(context:Context,token:String){ensureNotificationChannels(context);val user=SupabaseProvider.client.auth.currentUserOrNull()?:return;SupabaseProvider.client.from("device_push_tokens").upsert(DevicePushTokenRow(user.id,token,deviceId(context))){onConflict="user_id,device_id"}}
- suspend fun unregisterCurrentDevice(context:Context){val user=SupabaseProvider.client.auth.currentUserOrNull()?:return;SupabaseProvider.client.from("device_push_tokens").delete{filter{eq("user_id",user.id);eq("device_id",deviceId(context))}}}
+ // The separately installed UI test app shares the phone's device id with the real app; it must never
+ // register or delete push tokens, or the real TwoShare would stop receiving notifications.
+ suspend fun registerCurrentDevice(context:Context){if(!BuildConfig.PUSH_ENABLED)return;ensureNotificationChannels(context);val user=SupabaseProvider.client.auth.currentUserOrNull()?:return;val token=FirebaseMessaging.getInstance().token.await();SupabaseProvider.client.from("device_push_tokens").upsert(DevicePushTokenRow(user.id,token,deviceId(context))){onConflict="user_id,device_id"}}
+ suspend fun registerToken(context:Context,token:String){if(!BuildConfig.PUSH_ENABLED)return;ensureNotificationChannels(context);val user=SupabaseProvider.client.auth.currentUserOrNull()?:return;SupabaseProvider.client.from("device_push_tokens").upsert(DevicePushTokenRow(user.id,token,deviceId(context))){onConflict="user_id,device_id"}}
+ suspend fun unregisterCurrentDevice(context:Context){if(!BuildConfig.PUSH_ENABLED)return;val user=SupabaseProvider.client.auth.currentUserOrNull()?:return;SupabaseProvider.client.from("device_push_tokens").delete{filter{eq("user_id",user.id);eq("device_id",deviceId(context))}}}
  private fun deviceId(context:Context)=Settings.Secure.getString(context.contentResolver,Settings.Secure.ANDROID_ID).orEmpty().ifBlank{context.packageName}
 }
